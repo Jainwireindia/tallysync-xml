@@ -199,8 +199,12 @@ table.grid tbody tr:hover{background:var(--panel-2)}
     <button id="addItemBtn">Add item</button>
     <button id="pasteItemsBtn">Paste from Excel</button>
     <button id="itemExportBtn">Export to Excel</button>
+    <button id="itemXlsxImportBtn">Import from Excel</button>
     <button id="clearItemsBtn" class="danger">Clear all items</button>
   </div>
+  <input type="file" id="itemXlsxImportFile" accept=".xlsx,.xls" style="display:none">
+  <div id="itemXlsxStatus" class="desc" style="margin-bottom:6px"></div>
+  <div id="itemXlsxPreview"></div>
   <div id="itemDupWarn"></div>
   <div id="itemBulkBar"></div>
   <div id="newItemBox" class="fix" style="display:none;margin-bottom:12px">
@@ -240,8 +244,13 @@ table.grid tbody tr:hover{background:var(--panel-2)}
     <button id="addPartyBtn">Add party</button>
     <button id="pastePartiesBtn">Paste from Tally export</button>
     <button id="uploadPartiesBtn">Upload party list (Excel)</button>
+    <button id="partyExportBtn">Export to Excel</button>
+    <button id="partyXlsxImportBtn">Import from Excel</button>
     <button id="clearPartiesBtn" class="danger">Clear all parties</button>
   </div>
+  <input type="file" id="partyXlsxImportFile" accept=".xlsx,.xls" style="display:none">
+  <div id="partyXlsxStatus" class="desc" style="margin-bottom:6px"></div>
+  <div id="partyXlsxPreview"></div>
   <div id="uploadPartiesBox" style="display:none;margin-bottom:12px">
     <p class="desc">Excel with a <span class="mono">Name</span> column and a <span class="mono">GSTIN</span> column (any order, any extra columns are ignored). State is worked out automatically from each GSTIN's state code — no state column needed. Add <span class="mono">Address</span>, <span class="mono">Pincode</span> and/or <span class="mono">Place</span> columns to pull those in too. Existing parties are matched by name and updated; anything new is added.</p>
     <div class="drop" id="partyDrop" style="padding:16px">
@@ -330,6 +339,16 @@ table.grid tbody tr:hover{background:var(--panel-2)}
     <button class="primary" id="fullBackupBtn">Download full backup</button>
     <button id="fullRestoreBtn">Restore from backup</button>
   </div>
+
+  <div class="sub">Master list (Excel — editable)</div>
+  <p class="desc">Items, parties, bundle weights and Tally settings as one spreadsheet you can open, edit, and hand off to anyone — no need to come back to this tool to fix a typo or add a batch of new items. Export, edit in Excel, then import the same file back; you'll get a preview and choose merge or replace before anything changes. This doesn't include the export log — use the JSON backup above for a complete snapshot.</p>
+  <div class="btnrow">
+    <button id="masterXlsxExportBtn">Export master list to Excel</button>
+    <button id="masterXlsxImportBtn">Import from Excel</button>
+  </div>
+  <input type="file" id="masterXlsxImportFile" accept=".xlsx,.xls" style="display:none">
+  <div id="masterXlsxStatus" class="desc" style="margin-top:6px"></div>
+  <div id="masterXlsxPreview"></div>
 </div>
 
 <!-- ============ LOG ============ -->
@@ -1516,17 +1535,13 @@ $('clearItemsBtn').addEventListener('click', () => {
   });
 });
 $('itemExportBtn').addEventListener('click', () => {
-  // Same column order the Paste from Excel box expects, so a round trip works.
-  const rows = items.map(it => ({
-    'Code': it.code, 'Tally Item Name': it.name, 'Category': it.cat, 'Unit': it.unit || '',
-    'Height (ft)': it.h ?? '', 'Length (ft)': it.l ?? '', 'Bundle kg': it.bundle ?? '',
-    'HSN': it.hsn || '', 'GST %': it.gst ?? '', 'Variants': it.variants || ''
-  }));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{wch:30},{wch:48},{wch:14},{wch:10},{wch:11},{wch:11},{wch:10},{wch:12},{wch:8},{wch:30}];
+  const ws = XLSX.utils.json_to_sheet(itemRowObjects());
+  ws['!cols'] = ITEM_COL_WIDTHS;
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Item Master');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMasterInstructionsRows()), 'Instructions');
+  XLSX.utils.book_append_sheet(wb, ws, 'Items');
   XLSX.writeFile(wb, `item-master-${stamp()}.xlsx`);
+  save();
   toast(`${items.length} items exported.`);
 });
 $('partySearch').addEventListener('input', renderParties);
@@ -1769,6 +1784,457 @@ $('restoreInput').addEventListener('change', e => {
     }catch(err){ toast('That file could not be read as a backup.'); }
   };
   rd.readAsText(f); e.target.value='';
+});
+
+/* ============================ MASTER LIST — EXCEL ============================
+   An editable alternative to the JSON backup: items, parties, bundle weights and
+   settings as spreadsheets. Every item and party carries a hidden stable ID, so a
+   row still matches after its code or name is edited in Excel — that's the whole
+   reason renames don't create duplicates on the way back in. Files are parsed and
+   validated up front, then shown as a preview so nothing changes silently. */
+const MASTER_XLSX_MARKER = 'TALLYSYNC-MASTER-V1';
+const SETTINGS_FIELDS = [
+  ['company','Company name in Tally'],
+  ['gstin','Your GSTIN'],
+  ['state','Your state'],
+  ['vtype','Voucher type'],
+  ['godown','Godown'],
+  ['salesLocal18','Sales ledger — 18% items, within state'],
+  ['salesInter18','Sales ledger — 18% items, outside state'],
+  ['salesLocal5','Sales ledger — 5% items, within state'],
+  ['salesInter5','Sales ledger — 5% items, outside state'],
+  ['cgst','CGST ledger'],
+  ['sgst','SGST ledger'],
+  ['igst','IGST ledger'],
+  ['round','Round off ledger'],
+  ['roundMethod','Rounding method (upward / normal / downward)']
+];
+
+/* Stable row IDs. Assigned lazily — nothing existing needs migrating, a row just
+   gets an ID the first time it's exported. The used-set guards against handing out
+   an ID that already exists, which a plain timestamp counter could do if two calls
+   landed in the same millisecond. */
+function ensureIds(){
+  const used = new Set();
+  items.forEach(it => { if(it.id) used.add(it.id); });
+  parties.forEach(p => { if(p.id) used.add(p.id); });
+  let counter = 0, assigned = 0;
+  const nextId = prefix => {
+    let id;
+    do { id = prefix + Date.now().toString(36) + (counter++).toString(36); } while(used.has(id));
+    used.add(id);
+    return id;
+  };
+  items.forEach(it => { if(!it.id){ it.id = nextId('I'); assigned++; } });
+  parties.forEach(p => { if(!p.id){ p.id = nextId('P'); assigned++; } });
+  return assigned;
+}
+
+const ITEM_COL_WIDTHS  = [{wch:14},{wch:30},{wch:48},{wch:14},{wch:10},{wch:11},{wch:11},{wch:10},{wch:12},{wch:8},{wch:30}];
+const PARTY_COL_WIDTHS = [{wch:14},{wch:36},{wch:17},{wch:14},{wch:22},{wch:36},{wch:10},{wch:16}];
+
+function itemRowObjects(){
+  ensureIds();
+  return items.map(it => ({
+    'ID': it.id || '', 'Code': it.code, 'Tally Item Name': it.name, 'Category': it.cat,
+    'Unit': it.unit || '', 'Height (ft)': it.h ?? '', 'Length (ft)': it.l ?? '',
+    'Bundle kg': it.bundle ?? '', 'HSN': it.hsn || '', 'GST %': it.gst ?? '', 'Variants': it.variants || ''
+  }));
+}
+function partyRowObjects(){
+  ensureIds();
+  return parties.map(p => ({
+    'ID': p.id || '', 'Ledger Name': p.name, 'GSTIN': p.gstin || '', 'State': p.state || '',
+    'Alias': p.alias || '', 'Address': p.address || '', 'Pincode': p.pincode || '', 'Place': p.place || ''
+  }));
+}
+
+function buildMasterInstructionsRows(){
+  return [
+    ['TallySync XML — Master List'],
+    [MASTER_XLSX_MARKER],
+    [],
+    ['HOW THIS FILE WORKS'],
+    ['This is an editable copy of your masters. Change anything here, then upload it back through'],
+    ['"Import from Excel". Nothing is saved until you review the preview and confirm.'],
+    [],
+    ['SHEETS IN THIS FILE'],
+    ['Items', 'One row per item code.'],
+    ['Parties', 'One row per party ledger — name, GSTIN, state, alias, and printed address.'],
+    ['Bundle Rules', 'The weight-per-bundle rules used to convert bundle counts to KG.'],
+    ['Settings', 'One row per Tally setting. Leave a Value blank to leave that setting unchanged.'],
+    ['', '(A sheet is only present if it was included in this export.)'],
+    [],
+    ['EDITING RULES'],
+    ['1.', 'Do not rename or reorder column headers, and do not rename the sheet tabs — they are read by exact name.'],
+    ['2.', 'Leave ID blank when adding a NEW row. Do not edit or delete the ID on an existing row —'],
+    ['', 'that is how the importer knows to update that row instead of creating a duplicate.'],
+    ['3.', 'Because of the ID, you CAN rename a code or a ledger name here and it will update in place.'],
+    ['4.', 'Items: Category must be one of ' + Object.keys(rules).join(', ') + ' — the tool won\'t guess a new one.'],
+    ['5.', 'Items: Height, Length, Bundle kg and GST % must be plain numbers, or left blank.'],
+    ['6.', 'Items: Variants are other codes/spellings for the same item — separate several with a comma.'],
+    ['7.', 'Parties: GSTIN must be 15 characters (2 digit state code + 13 more) or left blank.'],
+    ['8.', 'Parties: leaving State blank fills it in automatically from a valid GSTIN.'],
+    ['9.', 'Bundle Rules: Match Text is matched against the item\'s code and name run together, lowercase.'],
+    [],
+    ['MERGE vs REPLACE (chosen per sheet when you import)'],
+    ['Merge', 'Updates rows that match an existing ID (or code/name), adds rows that don\'t, deletes nothing. Safe default.'],
+    ['Replace', 'That sheet becomes exactly what is in this file. Anything not listed here is removed.'],
+    [],
+    ['Exported: ' + new Date().toLocaleString()]
+  ];
+}
+
+/* ---------- row-level parsers, shared by the per-tab and full-master imports ---------- */
+function parseItemRows(rows, problems, warnings){
+  const out = [];
+  const seenCodes = new Map(), seenIds = new Map();
+  rows.forEach((r,i) => {
+    const rowNo = i + 2;
+    const id = String(r['ID']||'').trim();
+    const code = String(r['Code']||'').trim();
+    const name = String(r['Tally Item Name']||'').trim();
+    if(!code && !name){ if(Object.values(r).some(v => String(v).trim())) problems.push(`Items row ${rowNo}: Code is empty.`); return; }
+    if(!code){ problems.push(`Items row ${rowNo}: Code is empty.`); return; }
+    if(!name){ problems.push(`Items row ${rowNo} ("${code}"): Tally Item Name is empty.`); return; }
+    if(id && seenIds.has(id)){ problems.push(`Items row ${rowNo}: ID "${id}" appears more than once in this file (also row ${seenIds.get(id)}). Leave ID blank on new rows instead of copying one.`); return; }
+    if(id) seenIds.set(id, rowNo);
+    if(seenCodes.has(tight(code))){ problems.push(`Items row ${rowNo}: code "${code}" appears more than once in this file (also row ${seenCodes.get(tight(code))}).`); return; }
+    seenCodes.set(tight(code), rowNo);
+    const cat = String(r['Category']||'').trim();
+    if(!cat || !rules[cat]){ problems.push(`Items row ${rowNo} ("${code}"): category "${cat}" isn't one of ${Object.keys(rules).join(', ')}.`); return; }
+    const numOrBlank = (field) => {
+      const raw = String(r[field] ?? '').trim();
+      if(raw === '') return null;
+      const n = Number(raw);
+      if(isNaN(n)){ problems.push(`Items row ${rowNo} ("${code}"): ${field} "${raw}" isn't a plain number.`); return undefined; }
+      return n;
+    };
+    const h = numOrBlank('Height (ft)'); if(h === undefined) return;
+    const l = numOrBlank('Length (ft)'); if(l === undefined) return;
+    const bundle = numOrBlank('Bundle kg'); if(bundle === undefined) return;
+    const gst = numOrBlank('GST %'); if(gst === undefined) return;
+    out.push({ id, code, name, cat, unit: String(r['Unit']||'').trim() || rules[cat].unit,
+      h, l, bundle, hsn: String(r['HSN']||'').trim(), gst: gst ?? rules[cat].tax,
+      variants: String(r['Variants']||'').trim() });
+  });
+  return out;
+}
+
+function parsePartyRows(rows, problems, warnings){
+  const out = [];
+  const seenNames = new Map(), seenIds = new Map();
+  rows.forEach((r,i) => {
+    const rowNo = i + 2;
+    const id = String(r['ID']||'').trim();
+    const name = String(r['Ledger Name']||'').trim();
+    if(!name){ if(Object.values(r).some(v => String(v).trim())) problems.push(`Parties row ${rowNo}: Ledger Name is empty.`); return; }
+    if(id && seenIds.has(id)){ problems.push(`Parties row ${rowNo}: ID "${id}" appears more than once in this file (also row ${seenIds.get(id)}). Leave ID blank on new rows instead of copying one.`); return; }
+    if(id) seenIds.set(id, rowNo);
+    if(seenNames.has(tight(name))){ problems.push(`Parties row ${rowNo}: "${name}" appears more than once in this file (also row ${seenNames.get(tight(name))}).`); return; }
+    seenNames.set(tight(name), rowNo);
+    let gstin = String(r['GSTIN']||'').trim().toUpperCase();
+    if(gstin && !/^[0-9]{2}[A-Z0-9]{13}$/.test(gstin)){
+      warnings.push(`"${name}": GSTIN "${gstin}" doesn't look valid — imported without it.`);
+      gstin = '';
+    }
+    let state = String(r['State']||'').trim();
+    if(!state && gstin) state = stateFromGstin(gstin) || '';
+    out.push({ id, name, gstin, state, alias: String(r['Alias']||'').trim(),
+      address: String(r['Address']||'').trim(), pincode: String(r['Pincode']||'').trim(),
+      place: String(r['Place']||'').trim() });
+  });
+  return out;
+}
+
+function parseBundleRows(rows, problems, warnings){
+  const out = [];
+  rows.forEach((r,i) => {
+    const rowNo = i + 2;
+    const match = String(r['Match Text']||'').trim();
+    const label = String(r['Label']||'').trim();
+    if(!match && !label) return;
+    if(!match){ problems.push(`Bundle Rules row ${rowNo}: Match Text is empty.`); return; }
+    const weightRaw = String(r['Bundle Weight (kg)']||'').trim();
+    const weight = Number(weightRaw);
+    if(!weightRaw || isNaN(weight)){ problems.push(`Bundle Rules row ${rowNo} ("${match}"): Bundle Weight (kg) must be a plain number.`); return; }
+    out.push({ label: label || match, match: tight(match), weight });
+  });
+  return out;
+}
+
+function parseSettingsRows(rows, problems, warnings){
+  const patch = {};
+  const byLabel = new Map(SETTINGS_FIELDS.map(([key,label]) => [tight(label), key]));
+  rows.forEach((r,i) => {
+    const rowNo = i + 2;
+    const label = String(r['Field']||'').trim();
+    const value = String(r['Value']||'').trim();
+    if(!label) return;
+    const key = byLabel.get(tight(label));
+    if(!key){ warnings.push(`Settings row ${rowNo}: "${label}" isn't a setting this tool knows — ignored.`); return; }
+    if(value === '') return;                       // blank = leave unchanged
+    if(key === 'roundMethod' && !['upward','normal','downward'].includes(value.toLowerCase())){
+      problems.push(`Settings row ${rowNo}: Rounding method must be upward, normal, or downward — got "${value}".`);
+      return;
+    }
+    patch[key] = key === 'roundMethod' ? value.toLowerCase() : value;
+  });
+  return patch;
+}
+
+/* Sheet lookup is forgiving about the tab name so older single-sheet exports
+   ("Item Master", "Party Master") still import without being re-exported first. */
+function findSheet(wb, names){
+  for(const n of names) if(wb.Sheets[n]) return wb.Sheets[n];
+  return null;
+}
+function rowsOf(ws){ return ws ? XLSX.utils.sheet_to_json(ws, { defval:'', raw:false }) : null; }
+
+function parseWorkbook(wb, want){
+  const problems = [], warnings = [];
+  const parsed = { problems, warnings };
+
+  if(want.requireMarker){
+    const insWs = wb.Sheets['Instructions'];
+    let markerFound = false;
+    if(insWs){
+      const insRows = XLSX.utils.sheet_to_json(insWs, { header:1, defval:'' });
+      markerFound = insRows.some(r => Array.isArray(r) && r.some(c => String(c).trim() === MASTER_XLSX_MARKER));
+    }
+    if(!markerFound){
+      problems.push("This doesn't look like a master list export from this tool (its Instructions sheet is missing or altered). Export a fresh copy and edit that.");
+      return parsed;
+    }
+  }
+
+  if(want.items){
+    const rows = rowsOf(findSheet(wb, ['Items','Item Master']));
+    if(!rows){ problems.push('No "Items" sheet in that file. Don\'t rename or delete the sheet tabs.'); return parsed; }
+    parsed.items = parseItemRows(rows, problems, warnings);
+  }
+  if(want.parties){
+    const rows = rowsOf(findSheet(wb, ['Parties','Party Master']));
+    if(!rows){ problems.push('No "Parties" sheet in that file. Don\'t rename or delete the sheet tabs.'); return parsed; }
+    parsed.parties = parsePartyRows(rows, problems, warnings);
+  }
+  if(want.bundleRules){
+    const rows = rowsOf(findSheet(wb, ['Bundle Rules']));
+    if(!rows){ problems.push('No "Bundle Rules" sheet in that file.'); return parsed; }
+    parsed.bundleRules = parseBundleRows(rows, problems, warnings);
+  }
+  if(want.settings){
+    const rows = rowsOf(findSheet(wb, ['Settings']));
+    if(!rows){ problems.push('No "Settings" sheet in that file.'); return parsed; }
+    parsed.settingsPatch = parseSettingsRows(rows, problems, warnings);
+  }
+  return parsed;
+}
+
+/* ---------- merging ---------- */
+function mergeItemList(list, mode){
+  if(mode === 'replace'){
+    items = list.map(it => ({...it, id: it.id || undefined}));
+    selectedItems.clear();
+  } else {
+    const byId = new Map(items.filter(it => it.id).map(it => [it.id, it]));
+    const byCode = new Map(items.map(it => [tight(it.code), it]));
+    list.forEach(it => {
+      const hit = (it.id && byId.get(it.id)) || byCode.get(tight(it.code));
+      if(hit) Object.assign(hit, it, { id: hit.id });   // keep the ID already on file
+      else items.push({...it, id: it.id || undefined});
+    });
+  }
+  ensureIds();
+}
+function mergePartyList(list, mode){
+  if(mode === 'replace'){
+    parties = list.map(p => ({...p, id: p.id || undefined}));
+    selectedParties.clear();
+  } else {
+    const byId = new Map(parties.filter(p => p.id).map(p => [p.id, p]));
+    const byName = new Map(parties.map(p => [tight(p.name), p]));
+    list.forEach(p => {
+      const hit = (p.id && byId.get(p.id)) || byName.get(tight(p.name));
+      if(hit) Object.assign(hit, p, { id: hit.id });
+      else parties.push({...p, id: p.id || undefined});
+    });
+  }
+  ensureIds();
+}
+function mergeBundleList(list, mode){
+  if(mode === 'replace'){ bundleRules = list; return; }
+  const byMatch = new Map(bundleRules.map(b => [tight(b.match), b]));
+  list.forEach(b => {
+    const hit = byMatch.get(tight(b.match));
+    if(hit) Object.assign(hit, b); else bundleRules.push(b);
+  });
+}
+
+function countAgainst(list, existing, keyFn){
+  const byId = new Map(existing.filter(x => x.id).map(x => [x.id, x]));
+  const byKey = new Map(existing.map(x => [keyFn(x), x]));
+  let nw = 0, upd = 0;
+  list.forEach(x => { if((x.id && byId.get(x.id)) || byKey.get(keyFn(x))) upd++; else nw++; });
+  return { nw, upd, removed: existing.length - upd };
+}
+
+function applyImport(parsed, modes){
+  if(parsed.items) mergeItemList(parsed.items, modes.items || 'merge');
+  if(parsed.parties) mergePartyList(parsed.parties, modes.parties || 'merge');
+  if(parsed.bundleRules) mergeBundleList(parsed.bundleRules, modes.bundleRules || 'merge');
+  if(parsed.settingsPatch) Object.assign(settings, parsed.settingsPatch);
+  save(); renderAll(); if(blocks) buildBills();
+}
+
+/* ---------- shared preview ---------- */
+function showImportPreview(parsed, hostId, statusId, onDone){
+  const host = $(hostId);
+  host.innerHTML = '';
+  if(parsed.problems.length){
+    host.innerHTML = `<div class="note bad"><b>${parsed.problems.length} problem${parsed.problems.length!==1?'s':''} found — nothing was imported</b>
+      <ul style="margin:6px 0 4px 18px;padding:0">${parsed.problems.slice(0,25).map(p=>`<li>${esc(p)}</li>`).join('')}</ul>
+      ${parsed.problems.length>25?`<div class="muted">…and ${parsed.problems.length-25} more.</div>`:''}
+      <div class="btnrow" style="margin-top:8px"><button data-imp-close>Close</button></div>
+    </div>`;
+    host.querySelector('[data-imp-close]').addEventListener('click', () => host.innerHTML='');
+    return;
+  }
+
+  const sections = [];
+  if(parsed.items)   sections.push(['items','Items', countAgainst(parsed.items, items, x => tight(x.code))]);
+  if(parsed.parties) sections.push(['parties','Parties', countAgainst(parsed.parties, parties, x => tight(x.name))]);
+  if(parsed.bundleRules) sections.push(['bundleRules','Bundle Rules', countAgainst(parsed.bundleRules, bundleRules, x => tight(x.match))]);
+
+  const modes = {};
+  sections.forEach(([key]) => { modes[key] = 'merge'; });
+  const settingsCount = parsed.settingsPatch ? Object.keys(parsed.settingsPatch).length : 0;
+
+  host.innerHTML = `<div class="note" style="border-color:var(--line)">
+    <b>Ready to import — choose what to do for each sheet</b>
+    <div class="muted" style="margin:6px 0 10px">
+      ${sections.map(([,label,c]) => `${label}: ${c.nw} new, ${c.upd} matched existing`).join('<br>')}
+      ${parsed.settingsPatch ? `${sections.length?'<br>':''}Settings: ${settingsCount} field${settingsCount!==1?'s':''} will change (always merged — blank cells leave a setting alone)` : ''}
+    </div>
+    ${sections.map(([key,label,c]) => `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <span style="min-width:110px;font-weight:600">${label}</span>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="imp-${key}" value="merge" checked>Merge</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="imp-${key}" value="replace">Replace</label>
+        <span class="imp-warn-${key}" style="color:var(--bad);font-size:12px;display:none">⚠ removes ${c.removed} not in file</span>
+      </div>`).join('')}
+    ${parsed.warnings.length ? `<div class="muted" style="margin-top:6px">${parsed.warnings.length} note(s): ${esc(parsed.warnings.slice(0,3).join(' · '))}${parsed.warnings.length>3?' …':''}</div>` : ''}
+    <div class="btnrow" style="margin-top:10px">
+      <button class="primary" data-imp-apply>Apply import</button>
+      <button data-imp-cancel>Cancel</button>
+    </div>
+  </div>`;
+
+  sections.forEach(([key]) => {
+    host.querySelectorAll(`input[name="imp-${key}"]`).forEach(rb => rb.addEventListener('change', e => {
+      modes[key] = e.target.value;
+      const w = host.querySelector(`.imp-warn-${key}`);
+      if(w) w.style.display = (modes[key]==='replace') ? 'inline' : 'none';
+    }));
+  });
+  host.querySelector('[data-imp-apply]').addEventListener('click', () => {
+    applyImport(parsed, modes);
+    host.innerHTML = '';
+    const st = $(statusId);
+    if(st){ st.style.color = ''; st.textContent = 'Imported and saved.'; }
+    toast(onDone || 'Imported.');
+  });
+  host.querySelector('[data-imp-cancel]').addEventListener('click', () => host.innerHTML='');
+}
+
+function readWorkbook(file, statusId, want, hostId, doneMsg){
+  const statusEl = $(statusId);
+  statusEl.style.color = ''; statusEl.textContent = 'Reading Excel file…';
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const wb = XLSX.read(new Uint8Array(reader.result), { type:'array' });
+      const parsed = parseWorkbook(wb, want);
+      statusEl.textContent = '';
+      showImportPreview(parsed, hostId, statusId, doneMsg);
+    }catch(err){
+      statusEl.style.color = 'var(--bad)';
+      statusEl.textContent = 'Could not read that file — make sure it\'s an .xlsx exported from this tool.';
+    }
+  };
+  reader.onerror = () => { statusEl.style.color = 'var(--bad)'; statusEl.textContent = 'Could not read that file.'; };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ---------- party master: export / import ---------- */
+$('partyExportBtn').addEventListener('click', () => {
+  const ws = XLSX.utils.json_to_sheet(partyRowObjects());
+  ws['!cols'] = PARTY_COL_WIDTHS;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMasterInstructionsRows()), 'Instructions');
+  XLSX.utils.book_append_sheet(wb, ws, 'Parties');
+  XLSX.writeFile(wb, `party-master-${stamp()}.xlsx`);
+  save();
+  toast(`${parties.length} parties exported.`);
+});
+$('partyXlsxImportBtn').addEventListener('click', () => $('partyXlsxImportFile').click());
+$('partyXlsxImportFile').addEventListener('change', e => {
+  const file = e.target.files[0]; e.target.value='';
+  if(!file) return;
+  readWorkbook(file, 'partyXlsxStatus', { parties:true }, 'partyXlsxPreview', 'Party master imported.');
+});
+
+/* ---------- item master: import (export button is up with the other item buttons) ---------- */
+$('itemXlsxImportBtn').addEventListener('click', () => $('itemXlsxImportFile').click());
+$('itemXlsxImportFile').addEventListener('change', e => {
+  const file = e.target.files[0]; e.target.value='';
+  if(!file) return;
+  readWorkbook(file, 'itemXlsxStatus', { items:true }, 'itemXlsxPreview', 'Item master imported.');
+});
+
+/* ---------- full master list: export / import ---------- */
+function exportMasterExcel(){
+  const statusEl = $('masterXlsxStatus');
+  statusEl.style.color = ''; statusEl.textContent = 'Preparing Excel file…';
+  try{
+    const wb = XLSX.utils.book_new();
+
+    const insWs = XLSX.utils.aoa_to_sheet(buildMasterInstructionsRows());
+    insWs['!cols'] = [{wch:14},{wch:100}];
+    XLSX.utils.book_append_sheet(wb, insWs, 'Instructions');
+
+    const itWs = XLSX.utils.json_to_sheet(itemRowObjects());
+    itWs['!cols'] = ITEM_COL_WIDTHS;
+    XLSX.utils.book_append_sheet(wb, itWs, 'Items');
+
+    const ptWs = XLSX.utils.json_to_sheet(partyRowObjects());
+    ptWs['!cols'] = PARTY_COL_WIDTHS;
+    XLSX.utils.book_append_sheet(wb, ptWs, 'Parties');
+
+    const bWs = XLSX.utils.json_to_sheet(bundleRules.map(b => ({ 'Label': b.label, 'Match Text': b.match, 'Bundle Weight (kg)': b.weight })));
+    bWs['!cols'] = [{wch:30},{wch:24},{wch:16}];
+    XLSX.utils.book_append_sheet(wb, bWs, 'Bundle Rules');
+
+    const sWs = XLSX.utils.json_to_sheet(SETTINGS_FIELDS.map(([key,label]) => ({ 'Field': label, 'Value': settings[key] ?? '' })));
+    sWs['!cols'] = [{wch:40},{wch:34}];
+    XLSX.utils.book_append_sheet(wb, sWs, 'Settings');
+
+    XLSX.writeFile(wb, `tallysync-master-${stamp()}.xlsx`);
+    save();   // persist any IDs just assigned, or a re-import won't match on them
+    statusEl.textContent = `Exported ${items.length} items, ${parties.length} parties, ${bundleRules.length} bundle rule(s) and settings. Edit it, then use "Import from Excel" to bring changes back.`;
+  }catch(err){
+    statusEl.style.color = 'var(--bad)';
+    statusEl.textContent = err.message || 'Could not create the Excel file.';
+  }
+}
+$('masterXlsxExportBtn').addEventListener('click', exportMasterExcel);
+$('masterXlsxImportBtn').addEventListener('click', () => $('masterXlsxImportFile').click());
+$('masterXlsxImportFile').addEventListener('change', e => {
+  const file = e.target.files[0]; e.target.value='';
+  if(!file) return;
+  readWorkbook(file, 'masterXlsxStatus',
+    { requireMarker:true, items:true, parties:true, bundleRules:true, settings:true },
+    'masterXlsxPreview', 'Master list imported.');
 });
 $('clearLogBtn').addEventListener('click', () => {
   askConfirm('Clear the export log? Duplicate bills will stop being flagged.', () => {
