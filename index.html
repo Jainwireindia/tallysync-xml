@@ -625,8 +625,14 @@ function findParty(name){
 function bundleWeightFor(it){
   if(it.bundle) return Number(it.bundle);
   const t = tight(it.name + ' ' + it.code);
-  const hit = bundleRules.find(r => t.includes(r.match));
-  return hit ? hit.weight : null;
+  // Match text is a substring test, so a generic rule ("ms wire") is always also
+  // found inside a more specific one ("tata ms wire") — list order must not decide
+  // the winner. Take every rule that matches, then the longest match text wins,
+  // since the longest match is the most specific one.
+  const hits = bundleRules.filter(r => r.match && t.includes(r.match));
+  if(!hits.length) return null;
+  hits.sort((a,b) => b.match.length - a.match.length);
+  return hits[0].weight;
 }
 function isLocal(party){ return tight(party.state) === tight(settings.state); }
 const GST_STATE_CODES = {
@@ -982,8 +988,8 @@ function renderBills(){
       if(l.issue)   return `<tr><td class="mono">${esc(l.code)}</td><td>${esc(l.item?l.item.name:'')}</td><td colspan="5" class="muted">${esc(l.issue)}</td><td>${rmBtn}</td></tr>`;
       return `<tr>
         <td class="mono">${esc(l.code)}</td>
-        <td>${esc(l.item.name)}<div class="mono muted" style="font-size:10.5px">${esc(l.basis||rules[l.item.cat].label)}</div></td>
-        <td class="num"><input data-edit="qty" data-b="${bi}" data-r="${l.rowIdx}" value="${l.qty}" style="width:62px;text-align:right"></td>
+        <td>${esc(l.item.name)}</td>
+        <td class="num"><input data-edit="qty" data-b="${bi}" data-r="${l.rowIdx}" value="${l.qty}" style="width:62px;text-align:right"><div class="mono muted" style="font-size:10.5px;text-align:right">${esc(l.basis||rules[l.item.cat].label)}</div></td>
         <td class="mono">${esc(l.unit)}</td>
         <td class="num"><input data-edit="rate" data-b="${bi}" data-r="${l.rowIdx}" value="${l.quotedRate}" style="width:74px;text-align:right"></td>
         <td class="num"><b>${money(l.rate)}</b></td>
