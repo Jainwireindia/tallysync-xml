@@ -981,6 +981,9 @@ function renderBills(){
       ? `<span class="chip ${b.local?'ok':'warn'}">${b.local?'CGST + SGST':'IGST'}</span>`
       : `<span class="chip bad">Party not in master</span>`;
     const dupeChip = b.dupe ? `<span class="chip warn">Already exported today</span>` : '';
+    const addrChip = (b.party && (!tight(b.party.address) || !tight(b.party.pincode)))
+      ? `<span class="chip warn" title="Party master is missing ${!tight(b.party.address)&&!tight(b.party.pincode)?'address and pincode':(!tight(b.party.address)?'address':'pincode')} — reselect this party in Tally after import so the printed address shows correctly.">No address/pincode - add to Party master</span>`
+      : '';
 
     const rows = b.lines.map((l,li) => {
       const rmBtn = `<button class="mini danger" data-removeline="${bi}" data-r="${l.rowIdx}" title="Remove this item from the bill" style="padding:2px 7px;line-height:1">&times;</button>`;
@@ -1043,7 +1046,7 @@ function renderBills(){
         <div>
           <div class="who">
             ${b.party ? `<input type="checkbox" data-sel="${bi}" ${b.selected?'checked':''} style="margin-right:8px">` : ''}
-            ${esc(b.party ? b.party.name : b.block.customerName)}${partyChip}${dupeChip}
+            ${esc(b.party ? b.party.name : b.block.customerName)}${partyChip}${dupeChip}${addrChip}
           </div>
           <div class="meta">${esc(b.block.customerName)} · ${b.lines.length} line${b.lines.length!==1?'s':''} · ${esc(b.date)}</div>
         </div>
