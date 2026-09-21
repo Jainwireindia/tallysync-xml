@@ -268,7 +268,7 @@ table.grid tbody tr:hover{background:var(--panel-2)}
       <div><label class="fld">Alias on rate sheet</label><input id="npAlias" placeholder="how the sheet writes it" style="width:200px"></div>
     </div>
     <div class="row" style="margin-top:8px">
-      <div><label class="fld">Address (as on invoice)</label><input id="npAddress" placeholder="line1, line2, phone" style="width:280px"></div>
+      <div><label class="fld">Address (as on invoice)</label><textarea id="npAddress" placeholder="One address line per row, e.g.&#10;V11/454K, Thottathikuzhiyil Building&#10;EE Road, Kothanalloor&#10;Kurumulloor&#10;Kottayam&#10;PH : 9447660685, 0481-2792270" rows="5" style="width:280px;font:inherit;padding:6px"></textarea></div>
       <div><label class="fld">Pincode</label><input id="npPincode" style="width:100px"></div>
       <div><label class="fld">Place</label><input id="npPlace" style="width:150px"></div>
     </div>
@@ -860,10 +860,13 @@ function billToXml(bill, idx){
 
   // Tally only fills the address/pincode/place shown on the printed invoice
   // from the ledger master when the party field is re-entered by hand — a
-  // straight XML import leaves them blank. Sending them ourselves (split on
-  // commas/newlines the way Tally's own ADDRESS.LIST does) avoids that step.
+  // straight XML import leaves them blank. Sending them ourselves avoids
+  // that step. Split ONLY on newlines: each stored line becomes one
+  // ADDRESS.LIST line, exactly as typed. Splitting on commas too would
+  // break "V11/454K, THOTTATHIKUZHIYIL BUILDING" into two separate lines
+  // instead of the one line it's meant to print as.
   const addressLines = String(bill.party.address||'')
-    .split(/\r?\n|,/).map(s => s.trim()).filter(Boolean);
+    .split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
   return `<TALLYMESSAGE xmlns:UDF="TallyUDF">
 <VOUCHER VCHTYPE="${esc(settings.vtype)}" ACTION="Create" OBJVIEW="Invoice Voucher View">
@@ -1010,7 +1013,7 @@ function renderBills(){
           <div><label class="fld">Tally ledger name</label><input data-newparty="${bi}" data-f="name" value="${esc(b.block.customerName)}" style="width:230px"></div>
           <div><label class="fld">GSTIN</label><input data-newparty="${bi}" data-f="gstin" style="width:170px"></div>
           <div><label class="fld">State</label><input data-newparty="${bi}" data-f="state" value="Kerala" style="width:120px"></div>
-          <div><label class="fld">Address (as on invoice)</label><input data-newparty="${bi}" data-f="address" placeholder="line1, line2, phone" style="width:230px"></div>
+          <div><label class="fld">Address (as on invoice)</label><textarea data-newparty="${bi}" data-f="address" placeholder="One address line per row" rows="4" style="width:230px;font:inherit;padding:6px"></textarea></div>
           <div><label class="fld">Pincode</label><input data-newparty="${bi}" data-f="pincode" style="width:90px"></div>
           <div><label class="fld">Place</label><input data-newparty="${bi}" data-f="place" style="width:130px"></div>
           <button class="primary mini" data-saveparty="${bi}">Save party</button>
@@ -1352,7 +1355,7 @@ function renderParties(){
       <td><input data-i="${i}" data-f="gstin" value="${esc(p.gstin||'')}" style="width:170px"></td>
       <td><input data-i="${i}" data-f="state" value="${esc(p.state||'')}" style="width:120px"></td>
       <td><input data-i="${i}" data-f="alias" value="${esc(p.alias||'')}" style="width:180px"></td>
-      <td><input data-i="${i}" data-f="address" value="${esc(p.address||'')}" placeholder="line1, line2, phone" style="width:100%;min-width:220px"></td>
+      <td><textarea data-i="${i}" data-f="address" placeholder="One address line per row" rows="2" style="width:100%;min-width:220px;font:inherit;padding:4px">${esc(p.address||'')}</textarea></td>
       <td><input data-i="${i}" data-f="pincode" value="${esc(p.pincode||'')}" style="width:80px"></td>
       <td><input data-i="${i}" data-f="place" value="${esc(p.place||'')}" style="width:130px"></td>
       <td><button class="mini danger" data-del="${i}">remove</button></td>
@@ -1368,7 +1371,7 @@ function renderParties(){
     });
   });
 
-  $('partyTable').querySelectorAll('input[data-f]').forEach(el => el.addEventListener('change', e => {
+  $('partyTable').querySelectorAll('input[data-f], textarea[data-f]').forEach(el => el.addEventListener('change', e => {
     parties[+e.target.dataset.i][e.target.dataset.f] = e.target.value.trim();
     save(); if(blocks) buildBills();
   }));
