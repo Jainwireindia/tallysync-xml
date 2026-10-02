@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TallySync XML v2.5</title>
+<title>TallySync XML v3.1.0</title>
+<meta name="color-scheme" content="light dark">
+<script>
+// Set the theme before first paint so the page never flashes the wrong colours.
+(function(){ var t=null; try{ t=localStorage.getItem('jwnc_theme'); }catch(e){}
+  if(t!=='light' && t!=='dark') t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', t); })();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -21,22 +28,67 @@
   --ok:#1C6A4E; --ok-bg:#DCEDE4;
   --warn:#8A6512; --warn-bg:#F6EBD2;
   --bad:#983326; --bad-bg:#F3DFDB;
+  --weld-ink:#1F5F8B;      /* accent used as text (hover, counts) */
+  --weld-hover:#17486A;
+  --focus-bg:#FFFFFF;
+  --toast-bg:#132029; --toast-ink:#FFFFFF;
+  --grid-line:rgba(31,95,139,.07);
+  --ver-bg:#7A4A21;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --steel:#12181D;
+  --panel:#1A2228;
+  --panel-2:#212B33;
+  --ink:#E4EAEE;
+  --ink-soft:#9AABB8;
+  --line:#2E3B45;
+  --line-2:#465764;
+  --weld:#2E77AD;
+  --weld-soft:#1B3142;
+  --ok:#62C79F; --ok-bg:#15332A;
+  --warn:#E2B65C; --warn-bg:#382D13;
+  --bad:#F0907F; --bad-bg:#3C201C;
+  --weld-ink:#7DB8E2;
+  --weld-hover:#3A86BF;
+  --focus-bg:#26323B;
+  --toast-bg:#E4EAEE; --toast-ink:#132029;
+  --grid-line:rgba(125,184,226,.045);
+  --ver-bg:#8A5528;
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
 body{
   margin:0; color:var(--ink); font-family:'Inter',sans-serif; min-height:100vh;
   background-color:var(--steel);
   background-image:
-    linear-gradient(to right, rgba(31,95,139,.07) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(31,95,139,.07) 1px, transparent 1px);
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
   background-size:26px 26px;
   padding:34px 18px 90px;
 }
 .wrap{max-width:1140px;margin:0 auto}
-header{margin-bottom:18px}
+header{margin-bottom:18px;position:relative}
+header h1{padding-right:110px}
+.themesw{position:absolute;top:2px;right:6px;display:inline-flex;border:1px solid var(--line-2);border-radius:999px;
+  background:var(--panel);padding:2px;gap:2px}
+.themesw button{border:0;background:transparent;color:var(--ink-soft);font-size:15px;line-height:1;padding:6px 10px;
+  border-radius:999px;font-family:inherit}
+.themesw button:hover{color:var(--weld-ink)}
+.themesw button.on{background:var(--weld);color:#fff}
+.gate{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:24px;margin-bottom:18px;max-width:760px;display:none}
+body.gated .gate{display:block}
+body.gated .tabs, body.gated .panel, body.gated .exportbar{display:none !important}
+.gate h3{font-family:'Space Grotesk',sans-serif;font-size:18px;margin:0 0 6px}
+.gate .desc{font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin:0 0 16px}
+.gate a{color:var(--weld-ink)}
+.panel h3.sec{margin-top:30px;padding-top:18px;border-top:2px solid var(--line)}
+.fixhelp table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
+.fixhelp td{padding:5px 6px;border-top:1px solid var(--line);vertical-align:middle;color:var(--ink)}
+.fixhelp .btnrow{margin-top:8px}
 .eyebrow{display:inline-block;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:.03em;color:#fff;background:var(--weld);padding:5px 12px;border-radius:2px}
 .toolname{display:flex;align-items:flex-end;gap:5px;margin:0 0 12px}
-.toolname .ver{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:10px;line-height:1;letter-spacing:.02em;color:#fff;background:#7A4A21;padding:3px 6px;border-radius:2px;margin-bottom:1px}
+.toolname .ver{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:10px;line-height:1;letter-spacing:.02em;color:#fff;background:var(--ver-bg);padding:3px 6px;border-radius:2px;margin-bottom:1px}
 h1 .ekm{font-size:14px;font-weight:500;letter-spacing:0;color:var(--ink-soft);margin-left:4px}
 h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:31px;letter-spacing:-.02em;margin:0 0 10px}
 header p{margin:0;color:var(--ink-soft);font-size:14px;line-height:1.55;max-width:680px}
@@ -44,7 +96,7 @@ header p{margin:0;color:var(--ink-soft);font-size:14px;line-height:1.55;max-widt
 .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:18px 0 16px}
 .tab{font-family:'IBM Plex Mono',monospace;font-size:12px;padding:8px 14px;border:1px solid var(--line);
   background:var(--panel);color:var(--ink-soft);border-radius:2px;cursor:pointer}
-.tab:hover{border-color:var(--weld);color:var(--weld)}
+.tab:hover{border-color:var(--weld);color:var(--weld-ink)}
 .tab.active{background:var(--weld);border-color:var(--weld);color:#fff}
 
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:20px;margin-bottom:18px;display:none}
@@ -57,18 +109,18 @@ header p{margin:0;color:var(--ink-soft);font-size:14px;line-height:1.55;max-widt
 
 input,select{font-family:'IBM Plex Mono',monospace;font-size:12px;padding:6px 8px;border:1px solid var(--line);
   border-radius:2px;background:var(--panel-2);color:var(--ink)}
-input:focus,select:focus{outline:2px solid var(--weld);outline-offset:-1px;background:#fff}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--weld);outline-offset:-1px;background:var(--focus-bg)}
 textarea{width:100%;font-family:'IBM Plex Mono',monospace;font-size:11.5px;padding:8px;border:1px solid var(--line);
-  border-radius:2px;background:var(--panel-2);min-height:90px;resize:vertical}
+  border-radius:2px;background:var(--panel-2);color:var(--ink);min-height:90px;resize:vertical}
 label.fld{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:3px;font-weight:500}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
-.grid2 input{width:100%}
+.grid2 input,.grid2 select{width:100%;min-width:0}
 
 button{font-family:'IBM Plex Mono',monospace;font-size:12px;padding:8px 14px;border-radius:2px;cursor:pointer;
   border:1px solid var(--line-2);background:var(--panel);color:var(--ink)}
-button:hover{border-color:var(--weld);color:var(--weld)}
+button:hover{border-color:var(--weld);color:var(--weld-ink)}
 button.primary{background:var(--weld);border-color:var(--weld);color:#fff}
-button.primary:hover{background:#17486A;color:#fff}
+button.primary:hover{background:var(--weld-hover);color:#fff}
 button.mini{padding:4px 8px;font-size:11px}
 button.danger{color:var(--bad);border-color:var(--line)}
 button.danger:hover{border-color:var(--bad);color:var(--bad)}
@@ -120,7 +172,7 @@ table.grid tbody tr:hover{background:var(--panel-2)}
 .bulkbar{display:none;align-items:center;gap:10px;flex-wrap:wrap;background:var(--weld-soft);border:1px solid var(--weld);
   border-radius:2px;padding:8px 12px;margin-bottom:10px;font-size:12.5px}
 .bulkbar.show{display:flex}
-.bulkbar .count{font-weight:600;color:var(--weld)}
+.bulkbar .count{font-weight:600;color:var(--weld-ink)}
 .bulkedit{display:none;background:var(--panel-2);border:1px solid var(--line);border-radius:2px;padding:12px;margin-bottom:10px}
 .bulkedit.show{display:flex}
 .bulkedit{flex-wrap:wrap;gap:10px;align-items:end}
@@ -135,11 +187,11 @@ table.grid tbody tr:hover{background:var(--panel-2)}
 .mono{font-family:'IBM Plex Mono',monospace}
 .empty{text-align:center;padding:40px 20px;color:var(--ink-soft);font-size:13px;line-height:1.6}
 
-.toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+.toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-ink);
   font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:10px 18px;border-radius:3px;z-index:40;
   box-shadow:0 4px 16px rgba(19,32,41,.25);opacity:0;pointer-events:none;transition:opacity .15s}
 .toast.show{opacity:1}
-.confirmbar{position:fixed;left:0;right:0;bottom:0;background:var(--ink);color:#fff;padding:14px 18px;
+.confirmbar{position:fixed;left:0;right:0;bottom:0;background:var(--toast-bg);color:var(--toast-ink);padding:14px 18px;
   z-index:41;display:none;box-shadow:0 -3px 14px rgba(19,32,41,.25)}
 .confirmbar.show{display:block}
 .confirmbar .inner{max-width:1140px;margin:0 auto;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
@@ -152,22 +204,40 @@ table.grid tbody tr:hover{background:var(--panel-2)}
 <body>
 <div class="wrap">
 <header>
+  <div class="themesw" role="group" aria-label="Colour theme">
+    <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme">&#9728;</button>
+    <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme">&#9790;</button>
+  </div>
   <h1>JAIN WIRE NETTING CORPORATION <span class="ekm">(EKM)</span></h1>
-  <div class="toolname"><span class="eyebrow">TallySync XML</span><span class="ver">v2.5</span></div>
+  <div class="toolname"><span class="eyebrow">TallySync XML</span><span class="ver">v3.1.0</span></div>
   <p>Reads your rate sheet, applies your pricing rules, and writes a TallyPrime-ready XML. Voucher numbers stay with Tally — this file never sets one.</p>
 </header>
 
 <div id="storageBanner"></div>
 <div id="cloudBanner"></div>
 
+<!-- ============ LOGIN (shown first in a browser that isn't logged in) ============ -->
+<div class="gate" id="cloudGate">
+  <h3>Log in to TallySync</h3>
+  <p class="desc">Log in with your user name and password to load the shared items, parties and settings. This browser stays logged in afterwards, and everything you change is saved for every PC automatically. To log out or switch user later, use <b>Cloud &amp; Backup</b>.</p>
+  <div class="grid2">
+    <div id="g_urlwrap" style="display:none"><label class="fld">Web app URL</label><input id="g_url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>
+    <div><label class="fld">User name</label><input id="g_user" autocomplete="username"></div>
+    <div><label class="fld">Password</label><input id="g_key" type="password" autocomplete="current-password"></div>
+  </div>
+  <div class="btnrow"><button class="primary" id="gateConnectBtn">Log in</button></div>
+  <div id="gateStatus"></div>
+  <p class="desc" style="margin:16px 0 0"><a href="#" id="gateSkip">Continue without logging in</a> — items and parties on this PC won't match the other PCs, and the export log won't record who exported. This screen comes back next time.</p>
+</div>
+
 <div class="tabs">
   <button class="tab active" data-tab="build">Build bills</button>
   <button class="tab" data-tab="items">Item master</button>
   <button class="tab" data-tab="parties">Party master</button>
-  <button class="tab" data-tab="rules">Pricing rules</button>
-  <button class="tab" data-tab="settings">Tally settings</button>
+  <button class="tab" data-tab="settings">Settings</button>
+  <button class="tab" data-tab="backup">Cloud &amp; Backup</button>
   <button class="tab" data-tab="log">Export log</button>
-  <span id="cloudPill" class="chip" style="margin-left:auto;align-self:center;cursor:pointer;display:none" title="Cloud sync — click for settings"></span>
+  <span id="cloudPill" class="chip" style="margin-left:auto;align-self:center;cursor:pointer;display:none" title="Cloud sync — click for details"></span>
 </div>
 
 <!-- ============ BUILD ============ -->
@@ -205,8 +275,8 @@ table.grid tbody tr:hover{background:var(--panel-2)}
     <button id="pasteItemsBtn">Paste from Excel</button>
     <button id="itemExportBtn">Export to Excel</button>
     <button id="itemXlsxImportBtn">Import from Excel</button>
-    <button id="clearItemsBtn" class="danger">Clear all items</button>
   </div>
+  <div id="itemFixHelp"></div>
   <input type="file" id="itemXlsxImportFile" accept=".xlsx,.xls" style="display:none">
   <div id="itemXlsxStatus" class="desc" style="margin-bottom:6px"></div>
   <div id="itemXlsxPreview"></div>
@@ -243,16 +313,15 @@ table.grid tbody tr:hover{background:var(--panel-2)}
 <!-- ============ PARTIES ============ -->
 <div class="panel" id="tab-parties">
   <h3>Party master</h3>
-  <p class="desc">Only the parties you actually bill need to be here. The name must match the TallyPrime ledger exactly. State decides the tax split — anything outside Kerala gets IGST instead of CGST and SGST. Add an alias if your rate sheet writes the name differently to Tally. Address, pincode and place are optional but recommended — without them Tally leaves the printed invoice's buyer address blank until someone reselects the party by hand.</p>
+  <p class="desc">Only the parties you actually bill need to be here. The name must match the TallyPrime ledger exactly. State decides the tax split — anything outside Kerala gets IGST instead of CGST and SGST. If your rate sheets write a name differently to Tally, add each spelling as an alias — a party can have several, separated by a semicolon (;). Address, pincode and place are optional but recommended — without them Tally leaves the printed invoice's buyer address blank until someone reselects the party by hand.</p>
   <div class="btnrow" style="margin:0 0 12px">
     <input id="partySearch" placeholder="search party" style="width:250px">
     <button id="addPartyBtn">Add party</button>
-    <button id="pastePartiesBtn">Paste from Tally export</button>
     <button id="uploadPartiesBtn">Upload party list (Excel)</button>
     <button id="partyExportBtn">Export to Excel</button>
     <button id="partyXlsxImportBtn">Import from Excel</button>
-    <button id="clearPartiesBtn" class="danger">Clear all parties</button>
   </div>
+  <div id="partyFixHelp"></div>
   <input type="file" id="partyXlsxImportFile" accept=".xlsx,.xls" style="display:none">
   <div id="partyXlsxStatus" class="desc" style="margin-bottom:6px"></div>
   <div id="partyXlsxPreview"></div>
@@ -270,7 +339,7 @@ table.grid tbody tr:hover{background:var(--panel-2)}
       <div><label class="fld">Tally ledger name *</label><input id="npName" placeholder="exact name in Tally" style="width:240px"></div>
       <div><label class="fld">GSTIN</label><input id="npGstin" placeholder="32XXXXXXXXXXXZX" style="width:180px"></div>
       <div><label class="fld">State</label><input id="npState" style="width:130px"></div>
-      <div><label class="fld">Alias on rate sheet</label><input id="npAlias" placeholder="how the sheet writes it" style="width:200px"></div>
+      <div><label class="fld">Aliases on rate sheet (separate with ;)</label><input id="npAlias" placeholder="how the sheets write it" style="width:260px"></div>
     </div>
     <div class="row" style="margin-top:8px">
       <div><label class="fld">Address (as on invoice)</label><textarea id="npAddress" placeholder="One address line per row, e.g.&#10;V11/454K, Thottathikuzhiyil Building&#10;EE Road, Kothanalloor&#10;Kurumulloor&#10;Kottayam&#10;PH : 9447660685, 0481-2792270" rows="5" style="width:280px;font:inherit;padding:6px"></textarea></div>
@@ -280,30 +349,17 @@ table.grid tbody tr:hover{background:var(--panel-2)}
     <div id="npWarn"></div>
     <div class="btnrow" style="margin-top:10px"><button class="primary" id="npSave">Save party</button><button id="npCancel">Cancel</button></div>
   </div>
-  <div id="pastePartiesBox" style="display:none;margin-bottom:12px">
-    <p class="desc">One party per line, tab or comma separated: <span class="mono">ledger name, GSTIN, state, alias, address, pincode, place</span>. Export from Tally with Display &gt; List of Accounts &gt; Ledgers, or paste straight from a spreadsheet. Address, pincode and place are optional — they let bills print with the buyer's address without reselecting the party in Tally.</p>
-    <textarea id="pastePartiesText" placeholder="Arafa Traders&#9;32AAAAA0000A1Z5&#9;Kerala"></textarea>
-    <div class="btnrow"><button class="primary" id="pastePartiesGo">Add these parties</button><button id="pastePartiesCancel">Cancel</button></div>
-  </div>
   <div id="partyWarn"></div>
   <div id="partyBulkBar"></div>
   <div class="scroll"><table class="grid" id="partyTable"></table></div>
 </div>
 
-<!-- ============ RULES ============ -->
-<div class="panel" id="tab-rules">
-  <h3>Pricing rules</h3>
-  <p class="desc">Rates on your sheet are always tax-inclusive, so every formula divides the tax back out and rounds up. Length is the fallback used when an item has no length of its own.</p>
-  <table class="grid" id="rulesTable"></table>
-  <div class="sub">Bundle weights</div>
-  <p class="desc">For bundle items, the quantity on your sheet is a count of bundles. Billed weight is that count times the weight below.</p>
-  <table class="grid" id="bundleTable"></table>
-  <div class="btnrow"><button id="addBundleBtn">Add bundle weight</button></div>
-</div>
-
 <!-- ============ SETTINGS ============ -->
 <div class="panel" id="tab-settings">
-  <h3>Tally settings</h3>
+  <h3>Settings</h3>
+  <p class="desc">The Tally names that go into every XML, and the pricing formulas. With cloud sync on, these are shared by every PC.</p>
+
+  <h3 class="sec" style="margin-top:14px">Tally settings</h3>
   <p class="desc">These names go straight into the XML. Each one must already exist in your company or Tally will reject the voucher on import.</p>
   <div class="sub">Company</div>
   <div class="grid2">
@@ -338,29 +394,44 @@ table.grid tbody tr:hover{background:var(--panel-2)}
   <div class="note">Leave the round off ledger blank to export exact paise instead of rounding to the rupee.</div>
   <div class="btnrow"><button class="primary" id="saveSettings">Save settings</button></div>
 
-  <div class="sub">Cloud sync (Google Drive)</div>
-  <p class="desc">Keeps items, parties, pricing rules, settings and the export log the same on every PC and browser. Every change is sent to your Google Drive a few seconds after you make it, and the latest copy is loaded whenever this page opens or comes back into focus. Set it up once per browser with the Web app URL and passphrase from your Apps Script.</p>
+
+  <h3 class="sec">Pricing rules</h3>
+  <p class="desc">Rates on your sheet are always tax-inclusive, so every formula divides the tax back out and rounds up. Length is the fallback used when an item has no length of its own.</p>
+  <table class="grid" id="rulesTable"></table>
+  <div class="sub">Bundle weights</div>
+  <p class="desc">For bundle items, the quantity on your sheet is a count of bundles. Billed weight is that count times the weight below.</p>
+  <table class="grid" id="bundleTable"></table>
+  <div class="btnrow"><button id="addBundleBtn">Add bundle weight</button></div>
+</div>
+
+<!-- ============ BACKUP & EXCEL ============ -->
+<div class="panel" id="tab-backup">
+  <h3>Cloud &amp; Backup</h3>
+  <p class="desc">Cloud sync keeps every PC on the same items, parties, settings and export log. Backups and Excel files are offline copies you keep yourself.</p>
+
+  <h3 class="sec" style="margin-top:14px">Cloud sync</h3>
+  <p class="desc">Changes are saved to the cloud a few seconds after you make them, and the latest copy is loaded whenever this page opens or comes back into focus. User names and passwords are set by whoever manages the Apps Script (its <b>USERS</b> list). Your user name is also what the Export log shows as who exported.</p>
   <div class="grid2">
-    <div><label class="fld">Web app URL</label><input id="c_url" placeholder="https://script.google.com/macros/s/…/exec"></div>
-    <div><label class="fld">Passphrase</label><input id="c_key" type="password" autocomplete="off"></div>
-    <div><label class="fld">Name for this PC</label><input id="c_device" placeholder="e.g. Billing PC 1"></div>
+    <div id="c_urlwrap" style="display:none"><label class="fld">Web app URL</label><input id="c_url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>
+    <div><label class="fld">User name</label><input id="c_user" autocomplete="username"></div>
+    <div><label class="fld">Password</label><input id="c_key" type="password" autocomplete="current-password"></div>
   </div>
   <div class="btnrow">
-    <button class="primary" id="cloudConnectBtn">Connect</button>
+    <button class="primary" id="cloudConnectBtn">Log in / switch user</button>
     <button id="cloudPushBtn">Save to cloud now</button>
     <button id="cloudPullBtn">Load from cloud now</button>
-    <button class="danger" id="cloudDisconnectBtn">Disconnect this browser</button>
+    <button class="danger" id="cloudDisconnectBtn">Log out of this browser</button>
   </div>
   <div id="cloudStatus" class="note" style="display:none"></div>
 
-  <div class="sub">Backup &amp; restore</div>
-  <p class="desc">Everything this tool knows — items, parties, pricing rules, Tally settings, and the export log — in one file. Download it before switching computers or browsers, sharing this tool with a teammate, or moving from a downloaded copy into a Claude chat. Restoring replaces whatever is currently loaded, so grab a fresh backup first if you're not sure.</p>
+  <h3 class="sec">Backup &amp; restore</h3>
+  <p class="desc">Everything this tool knows — items, parties, pricing rules, Tally settings, and the export log — in one file. Keep one as an offline copy before big changes. Restoring replaces whatever is currently loaded, and with cloud sync on it also becomes the cloud copy that every PC loads, so download a fresh backup first if you're not sure.</p>
   <div class="btnrow">
     <button class="primary" id="fullBackupBtn">Download full backup</button>
     <button id="fullRestoreBtn">Restore from backup</button>
   </div>
 
-  <div class="sub">Master list (Excel — editable)</div>
+  <h3 class="sec">Master list (Excel — editable)</h3>
   <p class="desc">Items, parties, bundle weights and Tally settings as one spreadsheet you can open, edit, and hand off to anyone — no need to come back to this tool to fix a typo or add a batch of new items. Export, edit in Excel, then import the same file back; you'll get a preview and choose merge or replace before anything changes. This doesn't include the export log — use the JSON backup above for a complete snapshot.</p>
   <div class="btnrow">
     <button id="masterXlsxExportBtn">Export master list to Excel</button>
@@ -516,7 +587,7 @@ function renderStorageBanner(){
   el.innerHTML = storageOK === false ? `<div class="note bad">
     <b>Nothing is being saved.</b> This browser is blocking local storage (common in private/incognito
     windows, or with strict privacy settings), so edits, deletions and new items will all come back as
-    soon as the page reloads. Use <b>Tally settings &rarr; Download full backup</b> before you close this
+    soon as the page reloads. Use <b>Cloud &amp; Backup &rarr; Download full backup</b> before you close this
     tab, and restore it next time — or reopen this page in a normal browser window.</div>` : '';
 }
 async function load(){
@@ -548,21 +619,31 @@ async function load(){
    checks for a newer cloud copy when it opens, when it comes back into focus,
    and every couple of minutes. Each upload names the cloud revision it started
    from — if another PC saved in between, the script refuses and the user picks
-   how to settle it, so nothing is ever overwritten silently. The URL and
-   passphrase live in their own localStorage key, never inside the backup. */
+   how to settle it, so nothing is ever overwritten silently. The login lives in
+   its own localStorage key, never inside the backup. */
+// The Apps Script web app this tool syncs with. The link alone gives nothing away:
+// every request is checked against the user names and passwords in the script.
+const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbx-R398y10c45aeEug9A1SJw77PfmTGbkR0f7UhZix1zUDacfgWHu4VB9D8t6f9ylGM/exec';
 const CLOUD_CFG_KEY = 'jwnc_cloud';
 const CLOUD_PUSH_DELAY = 3000;
 const CLOUD_POLL_MS = 120000;
-let cloud = { url:'', key:'', device:'', rev:'', dirty:false, lastSync:'', lastBy:'' };
+let cloud = { url:'', user:'', key:'', rev:'', dirty:false, lastSync:'', lastBy:'' };
 let cloudState = 'off';      // off | ok | pending | saving | offline | conflict | error
 let cloudMsg = '';
 let cloudTimer = null, cloudRetry = null, cloudBusy = false, cloudApplying = false;
 let cloudEditSeq = 0, cloudLastCheck = 0;
 let cloudChoice = null;      // { kind:'first'|'conflict', savedBy, savedAt } while waiting on the user
 
-function cloudLoadCfg(){ try{ Object.assign(cloud, JSON.parse(localStorage.getItem(CLOUD_CFG_KEY)||'{}')); }catch(e){} }
+function cloudLoadCfg(){
+  try{ Object.assign(cloud, JSON.parse(localStorage.getItem(CLOUD_CFG_KEY)||'{}')); }catch(e){}
+  // Older versions stored a "PC name" and one shared password; the name becomes the user name.
+  // The old password won't match a per-user login, so the first sync asks for a fresh login.
+  if(!cloud.user && cloud.device) cloud.user = cloud.device;
+  delete cloud.device;
+}
+function cloudUrl(){ return CLOUD_URL || cloud.url || ''; }
 function cloudSaveCfg(){ try{ localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(cloud)); }catch(e){} }
-function cloudOn(){ return !!(cloud.url && cloud.key); }
+function cloudOn(){ return !!(cloudUrl() && cloud.user && cloud.key); }
 function cloudSnapshot(){ return JSON.stringify({ rules, bundleRules, settings, items, parties, exportLog }); }
 function cloudTime(iso){
   if(!iso) return '';
@@ -575,21 +656,25 @@ async function cloudCall(action, extra){
   try{
     // text/plain keeps this a "simple" request — Apps Script can't answer the
     // CORS preflight that application/json would trigger.
-    res = await fetch(cloud.url, {
+    res = await fetch(cloudUrl(), {
       method:'POST',
       headers:{ 'Content-Type':'text/plain;charset=utf-8' },
-      body: JSON.stringify(Object.assign({ action, key:cloud.key, device:cloud.device || 'Unnamed PC' }, extra || {}))
+      body: JSON.stringify(Object.assign({ action, user:cloud.user, key:cloud.key }, extra || {}))
     });
   }catch(e){
     const err = new Error(navigator.onLine === false
       ? 'No internet connection — changes are kept on this PC and will upload when it is back.'
-      : 'Could not reach the Apps Script. Check the Web app URL, and that "Who has access" is set to Anyone.');
+      : 'Could not reach the cloud. Check the internet connection. If it keeps happening, the Apps Script link may need checking ("Who has access" must be Anyone).');
     err.offline = true; throw err;
   }
   if(!res.ok){ const err = new Error('Cloud replied with HTTP ' + res.status); err.offline = true; throw err; }
   const txt = await res.text();
-  try{ return JSON.parse(txt); }
+  let j;
+  try{ j = JSON.parse(txt); }
   catch(e){ throw new Error('That URL is not the TallySync script (it returned a web page, not data). Copy the Web app URL that ends in /exec.'); }
+  // A refused login is thrown, not returned, so every caller handles it in one place.
+  if(j && j.auth){ const err = new Error(j.error || 'Wrong user name or password.'); err.auth = true; throw err; }
+  return j;
 }
 
 function cloudApply(p){
@@ -662,7 +747,7 @@ async function cloudPush(force){
       cloudSetState('error', r.error || 'The cloud refused the save.');
     }
   }catch(e){
-    cloudSetState(e.offline ? 'offline' : 'error', e.message);
+    cloudFail(e);
     if(e.offline) cloudRetry = setTimeout(() => { if(cloud.dirty) cloudPush(false); }, 30000);
   }finally{ cloudBusy = false; }
 }
@@ -702,6 +787,16 @@ async function cloudCheck(opts){
     // The cloud has a newer copy than this PC last saw.
     const neverSynced = !cloud.rev;
     const hasLocal = items.length || parties.length;
+    // Reconnecting a browser that already holds exactly the cloud copy (e.g. after
+    // "Disconnect" and back) needs no choice — just adopt the cloud revision.
+    if(hasLocal && neverSynced && !cloud.dirty){
+      const r0 = await cloudCall('load');
+      if(r0.ok && !r0.empty && r0.data === cloudSnapshot()){
+        cloud.rev = r0.rev; cloud.lastSync = r0.savedAt; cloud.lastBy = r0.savedBy;
+        cloudSaveCfg(); cloudSetState('ok');
+        return;
+      }
+    }
     if(hasLocal && (cloud.dirty || neverSynced)){
       cloudChoice = { kind: neverSynced ? 'first' : 'conflict', savedBy:m.savedBy, savedAt:m.savedAt };
       cloudSetState('conflict');
@@ -716,7 +811,7 @@ async function cloudCheck(opts){
     cloudSetState('ok');
     toast(`Masters updated from the cloud — saved by ${r.savedBy || 'another PC'}, ${cloudTime(r.savedAt)}.`);
   }catch(e){
-    cloudSetState(e.offline ? 'offline' : 'error', e.message);
+    cloudFail(e);
   }finally{ cloudBusy = false; }
 }
 
@@ -751,7 +846,7 @@ async function cloudResolve(how){
       toast('This PC now uses the cloud copy.');
     }
   }catch(e){
-    cloudSetState(e.offline ? 'offline' : 'error', e.message);
+    cloudFail(e);
   }finally{ cloudBusy = false; }
 }
 
@@ -776,13 +871,13 @@ function cloudRender(){
   }[cloudState] || ['', '☁ Connecting…'];
   pill.className = 'chip ' + look[0];
   pill.textContent = look[1];
-  pill.title = cloudMsg || 'Cloud sync — click for settings';
+  pill.title = cloudMsg || (cloud.user ? 'Logged in as ' + cloud.user + ' — click for details' : 'Cloud sync — click for details');
   pill.style.display = '';
 
   st.style.display = '';
   st.className = 'note ' + ({ ok:'ok', pending:'warn', saving:'warn' }[cloudState] || (cloudState === 'off' ? '' : 'bad'));
   st.innerHTML = cloudState === 'ok'
-    ? `Connected as <b>${esc(cloud.device || 'Unnamed PC')}</b>. Last cloud save${last ? ':' + esc(last) : ''}${cloud.lastBy ? ' by ' + esc(cloud.lastBy) : ''}.`
+    ? `Logged in as <b>${esc(cloud.user)}</b>. Last cloud save${last ? ':' + esc(last) : ''}${cloud.lastBy ? ' by ' + esc(cloud.lastBy) : ''}.`
     : esc(cloudMsg || look[1]);
 
   if(cloudChoice){
@@ -802,68 +897,135 @@ function cloudRender(){
         <b>Use this PC's copy</b> — the cloud copy is replaced. The old one stays in the <i>versions</i> folder in Google Drive.
       </div></div>`;
   } else if(cloudState === 'error'){
-    ban.innerHTML = `<div class="note bad"><b>Cloud sync stopped:</b> ${esc(cloudMsg)} Changes are still saved on this PC. Fix it in <b>Tally settings → Cloud sync</b>.</div>`;
+    ban.innerHTML = `<div class="note bad"><b>Cloud sync stopped:</b> ${esc(cloudMsg)} Changes are still saved on this PC. Fix it in <b>Cloud &amp; Backup</b>.</div>`;
   } else {
     ban.innerHTML = '';
   }
 }
 
 function cloudFillForm(){
-  if(!$('c_url')) return;
-  $('c_url').value = cloud.url || '';
+  if(!$('c_user')) return;
+  $('c_user').value = cloud.user || '';
   $('c_key').value = cloud.key || '';
-  $('c_device').value = cloud.device || '';
+  if($('c_url')) $('c_url').value = cloud.url || '';
+  ['c_urlwrap','g_urlwrap'].forEach(id => { if($(id)) $(id).style.display = CLOUD_URL ? 'none' : ''; });
+}
+
+// Shows the login screen in a browser that isn't logged in. force = a login that
+// used to work was just refused, so show it even if "continue without" was chosen.
+function cloudGateCheck(msg, force){
+  let skipped = false;
+  try{
+    if(force) sessionStorage.removeItem('jwnc_gate_skip');
+    else skipped = sessionStorage.getItem('jwnc_gate_skip') === '1';
+  }catch(e){}
+  const show = !cloudOn() && !skipped;
+  document.body.classList.toggle('gated', show);
+  if(!show) return;
+  if($('g_user') && !$('g_user').value) $('g_user').value = cloud.user || '';
+  if(msg) $('gateStatus').innerHTML = `<div class="note bad">${esc(msg)}</div>`;
+  const f = $('g_user').value ? $('g_key') : $('g_user');
+  setTimeout(() => f.focus(), 50);
+}
+
+// Every sync path reports failures through here. A refused login (password changed,
+// user removed) puts the login screen back instead of failing quietly; nothing on
+// this PC is lost, and unsynced changes go up after logging in again.
+function cloudFail(e){
+  if(e && e.auth){
+    clearTimeout(cloudTimer); clearTimeout(cloudRetry);
+    cloud.key = ''; cloudChoice = null; cloudSaveCfg();
+    cloudSetState('off');
+    cloudFillForm();
+    cloudGateCheck('Your login was refused: ' + e.message + ' Log in again to keep syncing. Nothing on this PC was lost.', true);
+    return;
+  }
+  cloudSetState(e && e.offline ? 'offline' : 'error', e && e.message);
+}
+
+// Tries the login before keeping it, so a mistyped password never replaces a login
+// that was working. report(msg, 'info'|'error') shows progress.
+async function cloudConnect(urlIn, userIn, key, report){
+  const url = CLOUD_URL || String(urlIn||'').trim();
+  const user = String(userIn||'').trim();
+  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)){ report('The Web app URL should start with https://script.google.com/ and end with /exec.'); return false; }
+  if(!user){ report('Enter your user name.'); return false; }
+  if(!key){ report('Enter your password.'); return false; }
+  if(cloudBusy){ report('Cloud sync is busy. Try again in a moment.'); return false; }
+  const prev = Object.assign({}, cloud);
+  const sameStore = url === cloudUrl();
+  Object.assign(cloud, { url, user, key });
+  report('Checking the login…', 'info');
+  let m;
+  try{ m = await cloudCall('ping'); }
+  catch(e){ cloud = prev; report(e.message); return false; }
+  if(!m.ok){ cloud = prev; report(m.error || 'The cloud refused the login.'); return false; }
+  cloud.user = m.user || user;          // the name exactly as the Apps Script spells it
+  if(!sameStore){ cloud.rev = ''; cloud.lastSync = ''; cloud.lastBy = ''; cloud.dirty = false; }
+  cloudChoice = null;
+  cloudSaveCfg();
+  cloudSetState('off', 'Connecting…');
+  await cloudCheck({ manual:true, startup:true });
+  return true;
 }
 
 function cloudStart(){
   cloudLoadCfg();
   cloudFillForm();
   cloudRender();
+  cloudGateCheck();
 
   $('cloudBanner').addEventListener('click', e => {
     const b = e.target.closest('[data-cloud]');
     if(b) cloudResolve(b.dataset.cloud);
   });
   $('cloudPill').addEventListener('click', () => {
-    const t = document.querySelector('.tab[data-tab="settings"]');
+    const t = document.querySelector('.tab[data-tab="backup"]');
     if(t) t.click();
     const s = $('cloudStatus'); if(s) s.scrollIntoView({ behavior:'smooth', block:'center' });
   });
 
   $('cloudConnectBtn').addEventListener('click', async () => {
-    const url = $('c_url').value.trim(), key = $('c_key').value, device = $('c_device').value.trim();
-    if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)){
-      cloudSetState('error', 'The Web app URL should start with https://script.google.com/ and end with /exec.');
-      if(!cloudOn()){ const st = $('cloudStatus'); st.style.display=''; st.className='note bad'; st.textContent = cloudMsg; }
-      return;
-    }
-    if(!key){ toast('Enter the passphrase you set in the Apps Script.'); return; }
-    if(!device){ toast('Give this PC a name, e.g. "Billing PC 1".'); return; }
-    const sameStore = url === cloud.url;
-    cloud.url = url; cloud.key = key; cloud.device = device;
-    if(!sameStore){ cloud.rev = ''; cloud.lastSync = ''; cloud.lastBy = ''; }
-    cloudChoice = null;
-    cloudSaveCfg();
-    cloudSetState('off', 'Connecting…');
-    await cloudCheck({ manual:true, startup:true });
-    if(cloudState === 'ok' || cloudState === 'conflict') toast('Connected to cloud sync.');
+    const st = $('cloudStatus');
+    const report = (msg, kind) => { st.style.display = ''; st.className = 'note ' + (kind === 'info' ? '' : 'bad'); st.textContent = msg; };
+    const ok = await cloudConnect($('c_url').value, $('c_user').value, $('c_key').value, report);
+    if(ok) toast('Logged in as ' + cloud.user + '.');
+  });
+
+  // First run in this browser: the connect screen comes before everything else.
+  $('gateConnectBtn').addEventListener('click', async () => {
+    const st = $('gateStatus');
+    const report = (msg, kind) => { st.innerHTML = `<div class="note ${kind === 'info' ? '' : 'bad'}">${esc(msg)}</div>`; };
+    const btn = $('gateConnectBtn'); btn.disabled = true;
+    const ok = await cloudConnect($('g_url').value, $('g_user').value, $('g_key').value, report);
+    btn.disabled = false;
+    if(ok){ st.innerHTML = ''; cloudFillForm(); cloudGateCheck(); toast('Logged in as ' + cloud.user + '. This browser stays logged in.'); }
+  });
+  $('g_key').addEventListener('keydown', e => { if(e.key === 'Enter') $('gateConnectBtn').click(); });
+  $('g_user').addEventListener('keydown', e => { if(e.key === 'Enter') $('g_key').focus(); });
+  $('gateSkip').addEventListener('click', e => {
+    e.preventDefault();
+    try{ sessionStorage.setItem('jwnc_gate_skip', '1'); }catch(err){}
+    document.body.classList.remove('gated');
   });
   $('cloudPushBtn').addEventListener('click', () => {
-    if(!cloudOn()){ toast('Connect cloud sync first.'); return; }
+    if(!cloudOn()){ toast('Log in first.'); return; }
     cloudPush(false);
   });
   $('cloudPullBtn').addEventListener('click', () => {
-    if(!cloudOn()){ toast('Connect cloud sync first.'); return; }
+    if(!cloudOn()){ toast('Log in first.'); return; }
     cloudCheck({ manual:true });
   });
   $('cloudDisconnectBtn').addEventListener('click', () => {
-    if(!cloudOn()){ toast('This browser is not connected.'); return; }
-    askConfirm('Stop cloud sync in this browser? The data on this PC and in Google Drive both stay as they are.', () => {
+    if(!cloudOn()){ toast('This browser is not logged in.'); return; }
+    const pending = cloud.dirty ? ' Changes not yet saved to the cloud stay on this PC and go up after the next login.' : '';
+    askConfirm('Log out of this browser? The data on this PC and in the cloud both stay as they are.' + pending, () => {
       clearTimeout(cloudTimer); clearTimeout(cloudRetry);
-      cloud = { url:'', key:'', device: cloud.device, rev:'', dirty:false, lastSync:'', lastBy:'' };
+      cloud = { url:'', user: cloud.user, key:'', rev: cloud.rev, dirty: cloud.dirty, lastSync: cloud.lastSync, lastBy: cloud.lastBy };
       cloudChoice = null;
       cloudSaveCfg(); cloudFillForm(); cloudSetState('off');
-      toast('Cloud sync turned off for this browser.');
+      cloudGateCheck('', true);
+      toast('Logged out.');
     });
   });
 
@@ -895,6 +1057,17 @@ function normCode(s){
   v = v.replace(/\bfeet\b/g,'ft').replace(/'/g,'ft');
   v = v.replace(/[^a-z0-9/.]+/g,' ').replace(/\s+/g,' ').trim();
   return v;
+}
+
+// A party can have several rate-sheet spellings, separated by ";" (a comma can't be the
+// separator: spellings often contain one, e.g. "Pullathil Cements, Kothanalloor").
+function partyAliases(p){
+  return String((p && p.alias) || '').split(';').map(a => a.trim()).filter(Boolean);
+}
+function addAlias(p, text){
+  const list = partyAliases(p);
+  if(!list.some(a => tight(a) === tight(text))) list.push(String(text).trim());
+  p.alias = list.join('; ');
 }
 
 function itemVariants(it){
@@ -961,7 +1134,7 @@ function findParty(name){
 
   let hit = pool.find(p => tight(p.name) === t);
   if(hit) return hit;
-  hit = pool.find(p => p.alias && tight(p.alias) === t);
+  hit = pool.find(p => partyAliases(p).some(a => tight(a) === t));
   if(hit) return hit;
 
   // one side being a clean prefix of the other, uniquely
@@ -975,7 +1148,7 @@ function findParty(name){
   let best=null, bestScore=0, second=0;
   pool.forEach(p => {
     const sc = Math.max(dice(want, bigrams(p.name)),
-                        p.alias ? dice(want, bigrams(p.alias)) : 0);
+                        ...partyAliases(p).map(a => dice(want, bigrams(a))));
     if(sc > bestScore){ second = bestScore; bestScore = sc; best = p; }
     else if(sc > second){ second = sc; }
   });
@@ -1312,7 +1485,8 @@ ${chosen.map((b,i) => billToXml(b,i)).join('\n')}
   download(xml, `tally-import-${(chosen[0].date||todayISO())}-${stamp()}.xml`, 'application/xml');
   chosen.forEach(b => exportLog.unshift({
     party:b.party.name, date:b.date, lines:b.lines.filter(l=>l.amount!=null).length,
-    total:b.taxable, expectedTotal:b.grand, sig:b.sig, at:new Date().toISOString()
+    total:b.taxable, expectedTotal:b.grand, sig:b.sig, at:new Date().toISOString(),
+    by: cloud.user || ''
   }));
   save(); renderLog(); buildBills();
 }
@@ -1364,39 +1538,27 @@ function renderBills(){
       </tr>`;
     }).join('');
 
+    // Bills never create parties or items themselves — a rushed add from here is how
+    // half-filled rows got into the masters. Each problem points to the right master
+    // instead, where the person can match an existing entry (alias / variant) or add
+    // it properly with the full form.
     const fixes = [];
     if(!b.party) fixes.push(`
       <div class="fix">
-        <h4>Add ${esc(b.block.customerName)} to the party master</h4>
-        <p>The XML needs the exact Tally ledger name, GSTIN and state before this bill can be written.</p>
-        <div class="row">
-          <div><label class="fld">Tally ledger name</label><input data-newparty="${bi}" data-f="name" value="${esc(b.block.customerName)}" style="width:230px"></div>
-          <div><label class="fld">GSTIN</label><input data-newparty="${bi}" data-f="gstin" style="width:170px"></div>
-          <div><label class="fld">State</label><input data-newparty="${bi}" data-f="state" value="Kerala" style="width:120px"></div>
-          <div><label class="fld">Address (as on invoice)</label><textarea data-newparty="${bi}" data-f="address" placeholder="One address line per row" rows="4" style="width:230px;font:inherit;padding:6px"></textarea></div>
-          <div><label class="fld">Pincode</label><input data-newparty="${bi}" data-f="pincode" style="width:90px"></div>
-          <div><label class="fld">Place</label><input data-newparty="${bi}" data-f="place" style="width:130px"></div>
-          <button class="primary mini" data-saveparty="${bi}">Save party</button>
-        </div>
+        <h4>“${esc(b.block.customerName)}” isn't in the party master</h4>
+        <p>Open the Party master and look for the right ledger. If it's there, add this name to its aliases. If it's a new customer, add it as a new party there. This bill updates as soon as the master changes.</p>
+        <button class="primary mini" data-fix="party" data-text="${esc(b.block.customerName)}">Fix in Party master →</button>
       </div>`);
     if(b.missingItems.length){
       const uniq = [...new Set(b.missingItems)];
       fixes.push(`
       <div class="fix">
-        <h4>${uniq.length} item${uniq.length>1?'s':''} not in the master yet</h4>
-        <p>Set the Tally stock item name and check the category — the rest is filled in from the code where it can be read.</p>
-        ${uniq.map((code,ci) => {
-          const g = guessSpec(code);
-          return `<div class="row" data-newitem="${bi}-${ci}">
-            <div><label class="fld">Code</label><input data-f="code" value="${esc(code)}" style="width:140px"></div>
-            <div><label class="fld">Tally stock item name</label><input data-f="name" placeholder="exact name in Tally" style="width:250px"></div>
-            <div><label class="fld">Category *</label><select data-f="cat"><option value="" selected>— select category —</option>${Object.keys(rules).map(k=>`<option value="${k}">${rules[k].label}${k===g.cat?' (suggested)':''}</option>`).join('')}</select></div>
-            <div><label class="fld">Ht ft</label><input data-f="h" value="${g.h??''}" style="width:60px"></div>
-            <div><label class="fld">Len ft</label><input data-f="l" value="${g.l??''}" style="width:60px"></div>
-            <div><label class="fld">HSN</label><input data-f="hsn" style="width:100px"></div>
-            <button class="primary mini" data-saveitem="${bi}-${ci}">Save item</button>
-          </div>`;
-        }).join('')}
+        <h4>${uniq.length} item code${uniq.length>1?'s':''} not in the item master</h4>
+        <p>Open the Item master for each code and look for the right item. If it's there, add the code as a variant. If it's a new item, add it there with its Tally name and category.</p>
+        ${uniq.map(code => `<div class="row" style="align-items:center">
+            <span class="mono" style="min-width:140px">${esc(code)}</span>
+            <button class="primary mini" data-fix="item" data-text="${esc(code)}">Fix in Item master →</button>
+          </div>`).join('')}
       </div>`);
     }
 
@@ -1463,28 +1625,11 @@ function renderBills(){
     bills[bi].block.rows[r].qty = 0;
     buildBills();
   }));
-  host.querySelectorAll('[data-saveparty]').forEach(btn => btn.addEventListener('click', e => {
-    const bi = e.target.dataset.saveparty;
-    const get = f => host.querySelector(`[data-newparty="${bi}"][data-f="${f}"]`).value.trim();
-    const name = get('name');
-    if(!name) return;
-    parties.push({ name, gstin:get('gstin'), state:get('state')||settings.state, alias:bills[+bi].block.customerName,
-                   address:get('address'), pincode:get('pincode'), place:get('place') });
-    save(); renderParties(); buildBills();
+  host.querySelectorAll('[data-fix]').forEach(btn => btn.addEventListener('click', e => {
+    const el = e.target.closest('[data-fix]');
+    openFix(el.dataset.fix, el.dataset.text);
   }));
-  host.querySelectorAll('[data-saveitem]').forEach(btn => btn.addEventListener('click', e => {
-    const key = e.target.dataset.saveitem;
-    const row = host.querySelector(`[data-newitem="${key}"]`);
-    const get = f => { const el = row.querySelector(`[data-f="${f}"]`); return el ? el.value.trim() : ''; };
-    const name = get('name'), code = get('code');
-    if(!name || !code){ toast('A code and the exact Tally stock item name are both needed.'); return; }
-    const cat = get('cat');
-    if(!cat || !rules[cat]){ toast('Pick a category — it decides the pricing formula, so it can\'t be guessed silently.'); return; }
-    if(items.some(i => tight(i.code) === tight(code))){ toast(`Code ${code} is already in the item master.`); return; }
-    items.push({ code, name, cat, unit:rules[cat].unit, h:get('h')?Number(get('h')):null,
-                 l:get('l')?Number(get('l')):null, bundle:null, hsn:get('hsn'), gst:rules[cat].tax, variants:'' });
-    save(); renderItems(); buildBills();
-  }));
+  renderFixHelp();
   updateBar();
 }
 
@@ -1676,7 +1821,7 @@ let selectedParties = new Set();
 
 function renderParties(){
   const q = tight($('partySearch').value);
-  const list = parties.map((p,i)=>({p,i})).filter(({p}) => !q || tight(p.name).includes(q) || tight(p.alias||'').includes(q));
+  const list = parties.map((p,i)=>({p,i})).filter(({p}) => !q || tight(p.name).includes(q) || partyAliases(p).some(a => tight(a).includes(q)));
   const allVisibleSelected = list.length>0 && list.every(({p}) => selectedParties.has(p));
 
   // A party with no ledger name is the one bad row that can quietly break every bill in a
@@ -1698,7 +1843,7 @@ function renderParties(){
   </div>
   <div class="bulkedit" id="pBulkEditPanel">
     <div class="fld2"><label>State (blank = no change)</label><input id="pbe_state" style="width:140px"></div>
-    <div class="fld2"><label>Alias</label><input id="pbe_alias" style="width:160px"></div>
+    <div class="fld2"><label>Add alias (separate several with ;)</label><input id="pbe_alias" style="width:200px"></div>
     <button class="primary mini" id="pBulkApplyBtn">Apply to ${n} part${n!==1?'ies':'y'}</button>
     <button class="mini" id="pBulkCancelBtn">Cancel</button>
   </div>` : '';
@@ -1706,7 +1851,7 @@ function renderParties(){
   $('partyTable').innerHTML = `
     <thead><tr>
       <th style="width:28px"><input type="checkbox" id="selectAllParties" ${allVisibleSelected?'checked':''}></th>
-      <th>Tally ledger name</th><th>GSTIN</th><th>State</th><th>Alias on rate sheet</th>
+      <th>Tally ledger name</th><th>GSTIN</th><th>State</th><th>Aliases on rate sheet (; between)</th>
       <th>Address (as on invoice)</th><th>Pincode</th><th>Place</th><th></th>
     </tr></thead>
     <tbody>${list.length ? list.map(({p,i}) => `<tr>
@@ -1714,12 +1859,12 @@ function renderParties(){
       <td><input data-i="${i}" data-f="name" value="${esc(p.name)}" style="width:100%;min-width:220px"></td>
       <td><input data-i="${i}" data-f="gstin" value="${esc(p.gstin||'')}" style="width:170px"></td>
       <td><input data-i="${i}" data-f="state" value="${esc(p.state||'')}" style="width:120px"></td>
-      <td><input data-i="${i}" data-f="alias" value="${esc(p.alias||'')}" style="width:180px"></td>
+      <td><input data-i="${i}" data-f="alias" value="${esc(p.alias||'')}" placeholder="alias 1; alias 2" title="Other ways a rate sheet writes this party. Separate several with a semicolon (;)" style="width:100%;min-width:200px"></td>
       <td><textarea data-i="${i}" data-f="address" placeholder="One address line per row" rows="2" style="width:100%;min-width:220px;font:inherit;padding:4px">${esc(p.address||'')}</textarea></td>
       <td><input data-i="${i}" data-f="pincode" value="${esc(p.pincode||'')}" style="width:80px"></td>
       <td><input data-i="${i}" data-f="place" value="${esc(p.place||'')}" style="width:130px"></td>
       <td><button class="mini danger" data-del="${i}">remove</button></td>
-    </tr>`).join('') : `<tr><td colspan="9" class="muted" style="padding:18px;text-align:center">No parties yet. They get added as you bill them, or paste a list in.</td></tr>`}</tbody>`;
+    </tr>`).join('') : `<tr><td colspan="9" class="muted" style="padding:18px;text-align:center">No parties yet. Add one with “Add party”, or bring a list in with “Upload party list” or “Import from Excel”.</td></tr>`}</tbody>`;
 
   const dropBlank = $('dropBlankParties');
   if(dropBlank) dropBlank.addEventListener('click', () => {
@@ -1773,7 +1918,7 @@ function renderParties(){
     parties.forEach(p => {
       if(!selectedParties.has(p)) return;
       if(st) p.state = st;
-      if(al) p.alias = al;
+      if(al) al.split(';').forEach(a => { if(a.trim()) addAlias(p, a); });
     });
     save(); selectedParties.clear(); renderParties(); if(blocks) buildBills();
     toast(`${c} part${c!==1?'ies':'y'} updated.`);
@@ -1830,18 +1975,34 @@ function renderSettings(){
 
 function renderLog(){
   $('logTable').innerHTML = `
-    <thead><tr><th>Party</th><th>Bill date</th><th>Lines</th><th style="text-align:right">Exported (excl. tax)</th><th style="text-align:right">Expected after tax</th><th>Exported</th></tr></thead>
+    <thead><tr><th>Party</th><th>Bill date</th><th>Lines</th><th style="text-align:right">Exported (excl. tax)</th><th style="text-align:right">Expected after tax</th><th>Exported</th><th>User</th></tr></thead>
     <tbody>${exportLog.length ? exportLog.map(e => `<tr>
       <td>${esc(e.party)}</td><td class="mono">${esc(e.date)}</td><td class="num">${e.lines}</td>
       <td class="num">${money(e.total)}</td>
       <td class="num muted">${e.expectedTotal!=null?money(e.expectedTotal):'—'}</td>
       <td class="mono muted">${new Date(e.at).toLocaleString('en-IN')}</td>
-    </tr>`).join('') : `<tr><td colspan="6" class="muted" style="padding:18px;text-align:center">Nothing exported yet.</td></tr>`}</tbody>`;
+      <td>${e.by ? esc(e.by) : '<span class="muted">—</span>'}</td>
+    </tr>`).join('') : `<tr><td colspan="7" class="muted" style="padding:18px;text-align:center">Nothing exported yet.</td></tr>`}</tbody>`;
 }
 
 function renderAll(){ renderItems(); renderParties(); renderRules(); renderSettings(); renderLog(); }
 
 /* ============================ EVENTS ============================ */
+/* ---- Light / dark theme (per browser, not synced — it's a personal preference) ---- */
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('[data-theme-set]').forEach(b => {
+    const on = b.dataset.themeSet === t;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+document.querySelectorAll('[data-theme-set]').forEach(b => b.addEventListener('click', () => {
+  applyTheme(b.dataset.themeSet);
+  try{ localStorage.setItem('jwnc_theme', b.dataset.themeSet); }catch(e){}
+}));
+
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(x => x.classList.remove('open'));
@@ -1899,13 +2060,6 @@ $('exportCsvBtn').addEventListener('click', exportCsv);
 
 $('itemSearch').addEventListener('input', renderItems);
 $('itemCatFilter').addEventListener('change', renderItems);
-$('clearItemsBtn').addEventListener('click', () => {
-  if(!items.length){ toast('Item master is already empty.'); return; }
-  askConfirm(`Remove all ${items.length} items from the master? Download a backup first if you might need them.`, () => {
-    items = []; selectedItems.clear(); save(); renderItems(); if(blocks) buildBills();
-    toast('Item master cleared.');
-  });
-});
 $('itemExportBtn').addEventListener('click', () => {
   const ws = XLSX.utils.json_to_sheet(itemRowObjects());
   ws['!cols'] = ITEM_COL_WIDTHS;
@@ -1938,6 +2092,9 @@ $('niCode').addEventListener('blur', () => {
   const code = $('niCode').value.trim();
   if(!code) return;
   const g = guessSpec(code);
+  // guessSpec answers 'flat' when it can't read the code at all — that's a fallback,
+  // not a guess, so it must not pre-select a category the person never chose.
+  if(g.cat === 'flat') return;
   if(!$('niCat').value && g.cat) $('niCat').value = g.cat;
   if(!$('niH').value && g.h != null) $('niH').value = g.h;
   if(!$('niL').value && g.l != null) $('niL').value = g.l;
@@ -1978,7 +2135,7 @@ function openNewParty(){
   $('npAlias').value=''; $('npAddress').value=''; $('npPincode').value=''; $('npPlace').value='';
   $('npWarn').innerHTML='';
   $('newPartyBox').style.display='block';
-  $('pastePartiesBox').style.display='none'; $('uploadPartiesBox').style.display='none';
+  $('uploadPartiesBox').style.display='none';
   $('npName').focus();
 }
 $('addPartyBtn').addEventListener('click', openNewParty);
@@ -2014,6 +2171,139 @@ $('npSave').addEventListener('click', () => {
   toast(`Added ${name}.`);
   if(blocks) buildBills();
 });
+/* ============================ FIX FROM A BILL ============================
+   A bill with an unknown party or item code sends the person here instead of
+   offering a quick-add on the bill. The helper shows the closest existing
+   entries so the usual fix — this is a known party/item written differently —
+   is one click (alias / variant), and "add new" opens the full, validated form.
+   It never changes anything by itself; every change goes through the master. */
+let fixCtx = null;   // { kind:'party'|'item', text }
+
+function showTab(name){
+  const t = document.querySelector(`.tab[data-tab="${name}"]`);
+  if(t) t.click();
+}
+function openFix(kind, text){
+  fixCtx = { kind, text };
+  if(kind === 'party'){
+    // Seed the list search with the first real word of the name, so the table
+    // shows the likely candidates the way someone would search by hand.
+    const words = norm(text).split(' ').filter(w => w.length >= 3 && !['the','and'].includes(w));
+    $('partySearch').value = words[0] || '';
+    renderParties();
+    showTab('parties');
+  } else {
+    showTab('items');
+  }
+  renderFixHelp();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function partyCandidates(name){
+  const want = bigrams(name);
+  return parties.filter(p => tight(p.name))
+    .map(p => ({ p, sc: Math.max(dice(want, bigrams(p.name)), ...partyAliases(p).map(a => dice(want, bigrams(a)))) }))
+    .filter(x => x.sc >= 0.25).sort((a,b) => b.sc - a.sc).slice(0, 6);
+}
+function itemCandidates(code){
+  const want = bigrams(normCode(code));
+  return items.filter(i => tight(i.code) || tight(i.name))
+    .map(it => {
+      const opts = [it.code, it.name].concat(String(it.variants||'').split(',')).filter(o => String(o||'').trim());
+      return { it, sc: Math.max(0, ...opts.map(o => dice(want, bigrams(normCode(o))))) };
+    })
+    .filter(x => x.sc >= 0.25).sort((a,b) => b.sc - a.sc).slice(0, 6);
+}
+function waitingBillsNote(){
+  const n = bills.filter(b => b.blocked).length;
+  return n ? `${n} bill${n!==1?'s':''} in this batch still need${n===1?'s':''} fixing.` : 'Every bill in this batch is ready.';
+}
+function renderFixHelp(){
+  const ph = $('partyFixHelp'), ih = $('itemFixHelp');
+  if(!ph || !ih) return;
+  if(!blocks) fixCtx = null;
+  ph.innerHTML = ''; ih.innerHTML = '';
+  if(!fixCtx) return;
+  const host = fixCtx.kind === 'party' ? ph : ih;
+  const T = esc(fixCtx.text);
+  const back = `<button class="mini primary" data-fixact="back">← Back to bills</button>`;
+  const close = `<button class="mini" data-fixact="close">Close</button>`;
+
+  if(fixCtx.kind === 'party'){
+    const hit = findParty(fixCtx.text);
+    if(hit){
+      host.innerHTML = `<div class="note ok fixhelp">✓ “${T}” now matches <b>${esc(hit.name)}</b>. ${esc(waitingBillsNote())}
+        <div class="btnrow">${back}${close}</div></div>`;
+    } else {
+      const c = partyCandidates(fixCtx.text);
+      host.innerHTML = `<div class="note warn fixhelp"><b>Fixing a bill:</b> the rate sheet says “${T}”, which doesn't match any party.
+        ${c.length ? `<div style="margin-top:6px">Closest parties. If one of them is the right Tally ledger, add “${T}” to its aliases:</div>
+        <table>${c.map(({p}) => `<tr>
+          <td><b>${esc(p.name)}</b>${p.gstin ? ` <span class="mono muted">${esc(p.gstin)}</span>` : ''}</td>
+          <td class="muted">${partyAliases(p).length ? `aliases: ${esc(partyAliases(p).join('; '))}` : 'no alias yet'}</td>
+          <td style="text-align:right"><button class="mini" data-fixact="alias" data-pi="${parties.indexOf(p)}">Add as alias</button></td>
+        </tr>`).join('')}</table>` : `<div style="margin-top:6px">No party in the master looks close. Search the list below to be sure.</div>`}
+        <div class="btnrow"><button class="mini" data-fixact="addparty">Not listed: add “${T}” as a new party</button>${back}${close}</div></div>`;
+    }
+  } else {
+    const hit = findItem(fixCtx.text);
+    if(hit){
+      host.innerHTML = `<div class="note ok fixhelp">✓ Code “${T}” now matches <b>${esc(hit.name)}</b>. ${esc(waitingBillsNote())}
+        <div class="btnrow">${back}${close}</div></div>`;
+    } else {
+      const c = itemCandidates(fixCtx.text);
+      host.innerHTML = `<div class="note warn fixhelp"><b>Fixing a bill:</b> the rate sheet code “${T}” doesn't match any item.
+        ${c.length ? `<div style="margin-top:6px">Closest items. If one of them is the right Tally item, add “${T}” to its variants:</div>
+        <table>${c.map(({it}) => `<tr>
+          <td class="mono">${esc(it.code)}</td>
+          <td><b>${esc(it.name)}</b></td>
+          <td class="muted">${esc((rules[it.cat]||{}).label || 'no category')}</td>
+          <td style="text-align:right"><button class="mini" data-fixact="variant" data-ii="${items.indexOf(it)}">Add as variant</button></td>
+        </tr>`).join('')}</table>` : `<div style="margin-top:6px">No item in the master looks close. Search the list below to be sure.</div>`}
+        <div class="btnrow"><button class="mini" data-fixact="additem">Not listed: add “${T}” as a new item</button>${back}${close}</div></div>`;
+    }
+  }
+}
+function onFixHelpClick(e){
+  const b = e.target.closest('[data-fixact]');
+  if(!b || !fixCtx) return;
+  const act = b.dataset.fixact, text = fixCtx.text;
+  if(act === 'back'){ showTab('build'); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  if(act === 'close'){ fixCtx = null; renderFixHelp(); return; }
+  if(act === 'alias'){
+    const p = parties[+b.dataset.pi]; if(!p) return;
+    addAlias(p, text);   // added alongside any aliases it already has
+    save(); renderParties(); if(blocks) buildBills(); renderFixHelp();
+    toast(`“${text}” added to the aliases of ${p.name}.`);
+    return;
+  }
+  if(act === 'variant'){
+    const it = items[+b.dataset.ii]; if(!it) return;
+    const vs = String(it.variants||'').split(',').map(v => v.trim()).filter(Boolean);
+    if(!vs.some(v => tight(v) === tight(text))) vs.push(text);
+    it.variants = vs.join(', ');
+    save(); renderItems(); if(blocks) buildBills(); renderFixHelp();
+    toast(`“${text}” added as a variant of ${it.code}.`);
+    return;
+  }
+  if(act === 'addparty'){
+    openNewParty();
+    $('npName').value = text;
+    $('npAlias').value = text;
+    $('npWarn').innerHTML = `<div class="note">Change the ledger name to the exact name in Tally. The alias keeps the rate sheet's spelling, so it matches next time.</div>`;
+    $('npName').focus(); $('npName').select();
+    return;
+  }
+  if(act === 'additem'){
+    openNewItem();
+    $('niCode').value = text;
+    $('niCode').dispatchEvent(new Event('blur'));   // same height/length/category prefill as typing it
+    $('niName').focus();
+    return;
+  }
+}
+$('partyFixHelp').addEventListener('click', onFixHelpClick);
+$('itemFixHelp').addEventListener('click', onFixHelpClick);
+
 $('addBundleBtn').addEventListener('click', () => {
   bundleRules.push({ label:'New bundle item', match:'', weight:25 }); save(); renderRules();
 });
@@ -2037,13 +2327,6 @@ $('pasteItemsGo').addEventListener('click', () => {
   $('pasteItemsText').value=''; $('pasteItemsBox').style.display='none';
   save(); renderItems(); if(blocks) buildBills();
   toast(n + ' items added.');
-});
-$('clearPartiesBtn').addEventListener('click', () => {
-  if(!parties.length){ toast('Party master is already empty.'); return; }
-  askConfirm(`Remove all ${parties.length} parties from the master? This can't be undone from here \u2014 re-upload your Excel afterwards.`, () => {
-    parties = []; selectedParties.clear(); save(); renderParties();
-    toast('Party master cleared.');
-  });
 });
 $('uploadPartiesBtn').addEventListener('click', () => {
   $('uploadPartiesBox').style.display = $('uploadPartiesBox').style.display === 'none' ? 'block' : 'none';
@@ -2110,20 +2393,6 @@ function readPartyFile(file){
   };
   rd.readAsArrayBuffer(file);
 }
-
-$('pastePartiesBtn').addEventListener('click', () => { $('pastePartiesBox').style.display='block'; });
-$('pastePartiesCancel').addEventListener('click', () => { $('pastePartiesBox').style.display='none'; });
-$('pastePartiesGo').addEventListener('click', () => {
-  let n = 0;
-  splitPaste($('pastePartiesText').value).forEach(c => {
-    if(!c[0]) return;
-    parties.push({ name:c[0], gstin:c[1]||'', state:c[2]||settings.state, alias:c[3]||'',
-                   address:c[4]||'', pincode:c[5]||'', place:c[6]||'' }); n++;
-  });
-  $('pastePartiesText').value=''; $('pastePartiesBox').style.display='none';
-  save(); renderParties(); if(blocks) buildBills();
-  toast(n + ' parties added.');
-});
 
 $('saveSettings').addEventListener('click', () => {
   ['company','gstin','state','vtype','godown','salesLocal18','salesInter18','salesLocal5','salesInter5','cgst','sgst','igst','round','roundMethod'].forEach(k => {
@@ -2232,7 +2501,7 @@ function buildMasterInstructionsRows(){
     [],
     ['SHEETS IN THIS FILE'],
     ['Items', 'One row per item code.'],
-    ['Parties', 'One row per party ledger — name, GSTIN, state, alias, and printed address.'],
+    ['Parties', 'One row per party ledger — name, GSTIN, state, aliases (several separated by a semicolon ;), and printed address.'],
     ['Bundle Rules', 'The weight-per-bundle rules used to convert bundle counts to KG.'],
     ['Settings', 'One row per Tally setting. Leave a Value blank to leave that setting unchanged.'],
     ['', '(A sheet is only present if it was included in this export.)'],
