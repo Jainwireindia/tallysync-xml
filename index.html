@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TallySync XML</title>
+<title>TallySync XML v2.5</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -34,8 +34,11 @@ body{
 }
 .wrap{max-width:1140px;margin:0 auto}
 header{margin-bottom:18px}
-.eyebrow{display:inline-block;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:.03em;color:#fff;background:var(--weld);padding:5px 12px;border-radius:2px;margin:0 0 10px}
-h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:31px;letter-spacing:-.02em;margin:0 0 7px}
+.eyebrow{display:inline-block;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:.03em;color:#fff;background:var(--weld);padding:5px 12px;border-radius:2px}
+.toolname{display:flex;align-items:flex-end;gap:5px;margin:0 0 12px}
+.toolname .ver{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:10px;line-height:1;letter-spacing:.02em;color:#fff;background:#7A4A21;padding:3px 6px;border-radius:2px;margin-bottom:1px}
+h1 .ekm{font-size:14px;font-weight:500;letter-spacing:0;color:var(--ink-soft);margin-left:4px}
+h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:31px;letter-spacing:-.02em;margin:0 0 10px}
 header p{margin:0;color:var(--ink-soft);font-size:14px;line-height:1.55;max-width:680px}
 
 .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:18px 0 16px}
@@ -149,8 +152,8 @@ table.grid tbody tr:hover{background:var(--panel-2)}
 <body>
 <div class="wrap">
 <header>
-  <p class="eyebrow">TallySync XML</p>
-  <h1>TallySync XML</h1>
+  <h1>JAIN WIRE NETTING CORPORATION <span class="ekm">(EKM)</span></h1>
+  <div class="toolname"><span class="eyebrow">TallySync XML</span><span class="ver">v2.5</span></div>
   <p>Reads your rate sheet, applies your pricing rules, and writes a TallyPrime-ready XML. Voucher numbers stay with Tally — this file never sets one.</p>
 </header>
 
