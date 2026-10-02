@@ -155,6 +155,7 @@ table.grid tbody tr:hover{background:var(--panel-2)}
 </header>
 
 <div id="storageBanner"></div>
+<div id="cloudBanner"></div>
 
 <div class="tabs">
   <button class="tab active" data-tab="build">Build bills</button>
@@ -163,6 +164,7 @@ table.grid tbody tr:hover{background:var(--panel-2)}
   <button class="tab" data-tab="rules">Pricing rules</button>
   <button class="tab" data-tab="settings">Tally settings</button>
   <button class="tab" data-tab="log">Export log</button>
+  <span id="cloudPill" class="chip" style="margin-left:auto;align-self:center;cursor:pointer;display:none" title="Cloud sync — click for settings"></span>
 </div>
 
 <!-- ============ BUILD ============ -->
@@ -333,6 +335,21 @@ table.grid tbody tr:hover{background:var(--panel-2)}
   <div class="note">Leave the round off ledger blank to export exact paise instead of rounding to the rupee.</div>
   <div class="btnrow"><button class="primary" id="saveSettings">Save settings</button></div>
 
+  <div class="sub">Cloud sync (Google Drive)</div>
+  <p class="desc">Keeps items, parties, pricing rules, settings and the export log the same on every PC and browser. Every change is sent to your Google Drive a few seconds after you make it, and the latest copy is loaded whenever this page opens or comes back into focus. Set it up once per browser with the Web app URL and passphrase from your Apps Script.</p>
+  <div class="grid2">
+    <div><label class="fld">Web app URL</label><input id="c_url" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <div><label class="fld">Passphrase</label><input id="c_key" type="password" autocomplete="off"></div>
+    <div><label class="fld">Name for this PC</label><input id="c_device" placeholder="e.g. Billing PC 1"></div>
+  </div>
+  <div class="btnrow">
+    <button class="primary" id="cloudConnectBtn">Connect</button>
+    <button id="cloudPushBtn">Save to cloud now</button>
+    <button id="cloudPullBtn">Load from cloud now</button>
+    <button class="danger" id="cloudDisconnectBtn">Disconnect this browser</button>
+  </div>
+  <div id="cloudStatus" class="note" style="display:none"></div>
+
   <div class="sub">Backup &amp; restore</div>
   <p class="desc">Everything this tool knows — items, parties, pricing rules, Tally settings, and the export log — in one file. Download it before switching computers or browsers, sharing this tool with a teammate, or moving from a downloaded copy into a Claude chat. Restoring replaces whatever is currently loaded, so grab a fresh backup first if you're not sure.</p>
   <div class="btnrow">
@@ -474,12 +491,14 @@ async function save(){
     localStorage.setItem('jwnc_billbuilder', JSON.stringify(payload));
     storageOK = true;
     renderStorageBanner();
+    cloudNoteChange();
     return true;
   }catch(e){
     // Only fails in genuinely locked-down browsing (private/incognito with storage
     // blocked, or a very old browser) — real hosting always has localStorage.
     storageOK = false;
     renderStorageBanner();
+    cloudNoteChange();   // the cloud copy still works even when this browser can't store locally
     if(!saveWarned){
       saveWarned = true;
       toast("Changes aren't being saved — download a backup before closing.");
@@ -518,6 +537,344 @@ async function load(){
   }catch(e){ storageOK = false; }
   renderAll();
   renderStorageBanner();
+}
+
+/* ============================ CLOUD SYNC ============================
+   Talks to a Google Apps Script web app that keeps one JSON copy of the masters
+   in Google Drive. Every save() queues an upload a few seconds later; the page
+   checks for a newer cloud copy when it opens, when it comes back into focus,
+   and every couple of minutes. Each upload names the cloud revision it started
+   from — if another PC saved in between, the script refuses and the user picks
+   how to settle it, so nothing is ever overwritten silently. The URL and
+   passphrase live in their own localStorage key, never inside the backup. */
+const CLOUD_CFG_KEY = 'jwnc_cloud';
+const CLOUD_PUSH_DELAY = 3000;
+const CLOUD_POLL_MS = 120000;
+let cloud = { url:'', key:'', device:'', rev:'', dirty:false, lastSync:'', lastBy:'' };
+let cloudState = 'off';      // off | ok | pending | saving | offline | conflict | error
+let cloudMsg = '';
+let cloudTimer = null, cloudRetry = null, cloudBusy = false, cloudApplying = false;
+let cloudEditSeq = 0, cloudLastCheck = 0;
+let cloudChoice = null;      // { kind:'first'|'conflict', savedBy, savedAt } while waiting on the user
+
+function cloudLoadCfg(){ try{ Object.assign(cloud, JSON.parse(localStorage.getItem(CLOUD_CFG_KEY)||'{}')); }catch(e){} }
+function cloudSaveCfg(){ try{ localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(cloud)); }catch(e){} }
+function cloudOn(){ return !!(cloud.url && cloud.key); }
+function cloudSnapshot(){ return JSON.stringify({ rules, bundleRules, settings, items, parties, exportLog }); }
+function cloudTime(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+}
+
+async function cloudCall(action, extra){
+  let res;
+  try{
+    // text/plain keeps this a "simple" request — Apps Script can't answer the
+    // CORS preflight that application/json would trigger.
+    res = await fetch(cloud.url, {
+      method:'POST',
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action, key:cloud.key, device:cloud.device || 'Unnamed PC' }, extra || {}))
+    });
+  }catch(e){
+    const err = new Error(navigator.onLine === false
+      ? 'No internet connection — changes are kept on this PC and will upload when it is back.'
+      : 'Could not reach the Apps Script. Check the Web app URL, and that "Who has access" is set to Anyone.');
+    err.offline = true; throw err;
+  }
+  if(!res.ok){ const err = new Error('Cloud replied with HTTP ' + res.status); err.offline = true; throw err; }
+  const txt = await res.text();
+  try{ return JSON.parse(txt); }
+  catch(e){ throw new Error('That URL is not the TallySync script (it returned a web page, not data). Copy the Web app URL that ends in /exec.'); }
+}
+
+function cloudApply(p){
+  cloudApplying = true;   // the save() below must not queue an upload of what we just downloaded
+  try{
+    if(Array.isArray(p.items))   { items = p.items; selectedItems.clear(); }
+    if(Array.isArray(p.parties)) { parties = p.parties; selectedParties.clear(); }
+    if(p.rules) rules = Object.assign(rules, p.rules);
+    if(Array.isArray(p.bundleRules)) bundleRules = p.bundleRules;
+    if(p.settings) settings = Object.assign(settings, p.settings);
+    if(Array.isArray(p.exportLog)) exportLog = p.exportLog;
+    save(); renderAll(); if(blocks) buildBills();
+  } finally { cloudApplying = false; }
+}
+
+// Cloud copy, plus anything that exists only on this PC. A local row counts as
+// "already in the cloud" if its hidden ID or its code/name matches, so a row
+// renamed on one PC doesn't come back as a duplicate.
+function cloudCombine(remote){
+  const addMissing = (base, mine, keysOf) => {
+    base = Array.isArray(base) ? base : [];
+    const seen = new Set();
+    base.forEach(x => keysOf(x).forEach(k => seen.add(k)));
+    const extra = (mine || []).filter(x => {
+      const ks = keysOf(x);
+      if(!ks.length || ks.some(k => seen.has(k))) return false;
+      ks.forEach(k => seen.add(k));
+      return true;
+    });
+    return base.concat(extra);
+  };
+  const out = Object.assign({}, remote);
+  out.items = addMissing(remote.items, items, it => [it.id && 'id:'+it.id, tight(it.code) && 'c:'+tight(it.code)].filter(Boolean));
+  out.parties = addMissing(remote.parties, parties, p => [p.id && 'id:'+p.id, tight(p.name) && 'n:'+tight(p.name)].filter(Boolean));
+  out.bundleRules = addMissing(remote.bundleRules, bundleRules, r => [tight(r.match)].filter(Boolean));
+  out.exportLog = addMissing(remote.exportLog, exportLog, e => [(e.sig||'') + '|' + (e.at||'')])
+    .sort((a,b) => String(b.at||'').localeCompare(String(a.at||'')));
+  return out;
+}
+
+function cloudNoteChange(){
+  if(cloudApplying || !cloudOn()) return;
+  cloudEditSeq++;
+  if(!cloud.dirty){ cloud.dirty = true; cloudSaveCfg(); }
+  if(!cloudChoice) cloudSetState('pending');
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(() => cloudPush(false), CLOUD_PUSH_DELAY);
+}
+
+async function cloudPush(force){
+  if(!cloudOn()) return;
+  if(cloudChoice && !force) return;   // waiting for the user to settle a conflict
+  if(cloudBusy){ clearTimeout(cloudTimer); cloudTimer = setTimeout(() => cloudPush(force), 1500); return; }
+  cloudBusy = true; clearTimeout(cloudRetry);
+  const seq = cloudEditSeq;
+  cloudSetState('saving');
+  try{
+    const r = await cloudCall('save', { baseRev: cloud.rev, data: cloudSnapshot(), force: !!force });
+    if(r.ok){
+      cloud.rev = r.rev; cloud.lastSync = r.savedAt; cloud.lastBy = r.savedBy;
+      cloud.dirty = cloudEditSeq !== seq;   // edits made while uploading go up next round
+      cloudSaveCfg();
+      cloudChoice = null;
+      cloudSetState(cloud.dirty ? 'pending' : 'ok');
+      if(cloud.dirty){ clearTimeout(cloudTimer); cloudTimer = setTimeout(() => cloudPush(false), CLOUD_PUSH_DELAY); }
+    } else if(r.conflict){
+      cloudChoice = { kind:'conflict', savedBy:r.savedBy, savedAt:r.savedAt };
+      cloudSetState('conflict');
+    } else {
+      cloudSetState('error', r.error || 'The cloud refused the save.');
+    }
+  }catch(e){
+    cloudSetState(e.offline ? 'offline' : 'error', e.message);
+    if(e.offline) cloudRetry = setTimeout(() => { if(cloud.dirty) cloudPush(false); }, 30000);
+  }finally{ cloudBusy = false; }
+}
+
+// Looks for a newer cloud copy and loads it. opts.manual = the user pressed a
+// button; opts.startup = page just opened (no one is typing yet).
+async function cloudCheck(opts){
+  opts = opts || {};
+  if(!cloudOn() || cloudBusy) return;
+  if(cloudChoice && !opts.manual) return;
+  if(!opts.manual && !opts.startup){
+    const a = document.activeElement;
+    if(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;   // never re-render under someone's typing
+  }
+  cloudLastCheck = Date.now();
+  cloudBusy = true;
+  try{
+    const m = await cloudCall('ping');
+    if(!m.ok){ cloudSetState('error', m.error); return; }
+
+    if(!m.rev){   // nothing in the cloud yet — this PC becomes the first copy
+      cloudBusy = false;
+      if(items.length || parties.length){
+        await cloudPush(true);
+        if(cloudState === 'ok') toast("Cloud was empty — this PC's data is now the cloud copy.");
+      } else cloudSetState('ok');
+      return;
+    }
+
+    if(m.rev === cloud.rev){
+      if(cloud.dirty){ cloudBusy = false; await cloudPush(false); }
+      else cloudSetState('ok');
+      if(opts.manual) toast('Already up to date with the cloud.');
+      return;
+    }
+
+    // The cloud has a newer copy than this PC last saw.
+    const neverSynced = !cloud.rev;
+    const hasLocal = items.length || parties.length;
+    if(hasLocal && (cloud.dirty || neverSynced)){
+      cloudChoice = { kind: neverSynced ? 'first' : 'conflict', savedBy:m.savedBy, savedAt:m.savedAt };
+      cloudSetState('conflict');
+      return;
+    }
+    const r = await cloudCall('load');
+    if(!r.ok) throw new Error(r.error || 'Could not load the cloud copy.');
+    if(r.empty){ cloudSetState('ok'); return; }
+    cloudApply(JSON.parse(r.data));
+    cloud.rev = r.rev; cloud.dirty = false; cloud.lastSync = r.savedAt; cloud.lastBy = r.savedBy;
+    cloudSaveCfg();
+    cloudSetState('ok');
+    toast(`Masters updated from the cloud — saved by ${r.savedBy || 'another PC'}, ${cloudTime(r.savedAt)}.`);
+  }catch(e){
+    cloudSetState(e.offline ? 'offline' : 'error', e.message);
+  }finally{ cloudBusy = false; }
+}
+
+async function cloudResolve(how){
+  if(cloudBusy) return;
+  if(how === 'mine'){
+    cloudChoice = null;
+    await cloudPush(true);
+    if(cloudState === 'ok') toast("Cloud copy replaced with this PC's data. The previous copy is in Drive's versions folder.");
+    return;
+  }
+  cloudBusy = true;
+  try{
+    const r = await cloudCall('load');
+    if(!r.ok) throw new Error(r.error || 'Could not load the cloud copy.');
+    if(r.empty){ cloudBusy = false; cloudChoice = null; await cloudPush(true); return; }
+    const remote = JSON.parse(r.data);
+    if(how === 'combine'){
+      const before = { i: (remote.items||[]).length, p: (remote.parties||[]).length };
+      const merged = cloudCombine(remote);
+      cloudApply(merged);
+      cloud.rev = r.rev; cloud.dirty = true; cloudSaveCfg();
+      cloudChoice = null; cloudBusy = false;
+      await cloudPush(false);
+      toast(`Combined: ${merged.items.length - before.i} item(s) and ${merged.parties.length - before.p} part(ies) from this PC added to the cloud copy.`);
+    } else {
+      cloudApply(remote);
+      cloud.rev = r.rev; cloud.dirty = false; cloud.lastSync = r.savedAt; cloud.lastBy = r.savedBy;
+      cloudSaveCfg();
+      cloudChoice = null;
+      cloudSetState('ok');
+      toast('This PC now uses the cloud copy.');
+    }
+  }catch(e){
+    cloudSetState(e.offline ? 'offline' : 'error', e.message);
+  }finally{ cloudBusy = false; }
+}
+
+function cloudSetState(s, msg){ cloudState = s; cloudMsg = msg || ''; cloudRender(); }
+
+function cloudRender(){
+  const pill = $('cloudPill'), st = $('cloudStatus'), ban = $('cloudBanner');
+  if(!pill || !st || !ban) return;
+  if(!cloudOn()){
+    pill.style.display = 'none'; st.style.display = 'none'; ban.innerHTML = '';
+    return;
+  }
+  const last = cloud.lastSync ? ` ${cloudTime(cloud.lastSync)}` : '';
+  const look = {
+    ok:       ['ok',   `☁ Synced${last}`],
+    pending:  ['warn', '☁ Changes waiting…'],
+    saving:   ['warn', '☁ Saving…'],
+    offline:  ['bad',  '☁ Offline — kept on this PC'],
+    conflict: ['bad',  '☁ Needs your choice'],
+    error:    ['bad',  '☁ Sync error'],
+    off:      ['',     '☁ Connecting…']
+  }[cloudState] || ['', '☁ Connecting…'];
+  pill.className = 'chip ' + look[0];
+  pill.textContent = look[1];
+  pill.title = cloudMsg || 'Cloud sync — click for settings';
+  pill.style.display = '';
+
+  st.style.display = '';
+  st.className = 'note ' + ({ ok:'ok', pending:'warn', saving:'warn' }[cloudState] || (cloudState === 'off' ? '' : 'bad'));
+  st.innerHTML = cloudState === 'ok'
+    ? `Connected as <b>${esc(cloud.device || 'Unnamed PC')}</b>. Last cloud save${last ? ':' + esc(last) : ''}${cloud.lastBy ? ' by ' + esc(cloud.lastBy) : ''}.`
+    : esc(cloudMsg || look[1]);
+
+  if(cloudChoice){
+    const who = esc(cloudChoice.savedBy || 'another PC'), when = esc(cloudTime(cloudChoice.savedAt));
+    const intro = cloudChoice.kind === 'first'
+      ? `<b>This browser already has its own masters, and the cloud has a copy</b> saved by ${who}${when ? ' on ' + when : ''}. Choose which one this PC should use — nothing is uploaded until you do.`
+      : `<b>The masters were changed on this PC and on ${who}</b>${when ? ' (' + when + ')' : ''} since the last sync. Choose how to settle it — nothing is uploaded until you do.`;
+    ban.innerHTML = `<div class="note warn">${intro}
+      <div class="btnrow" style="margin-top:10px">
+        <button class="primary mini" data-cloud="combine">Combine both (recommended)</button>
+        <button class="mini" data-cloud="cloud">Use the cloud copy</button>
+        <button class="mini" data-cloud="mine">Use this PC's copy</button>
+      </div>
+      <div style="margin-top:8px;font-size:11.5px;line-height:1.55">
+        <b>Combine</b> — the cloud copy plus any items, parties and log entries that exist only on this PC. Edits this PC made to rows that are already in the cloud are dropped.<br>
+        <b>Use the cloud copy</b> — this PC's unsynced changes are discarded.<br>
+        <b>Use this PC's copy</b> — the cloud copy is replaced. The old one stays in the <i>versions</i> folder in Google Drive.
+      </div></div>`;
+  } else if(cloudState === 'error'){
+    ban.innerHTML = `<div class="note bad"><b>Cloud sync stopped:</b> ${esc(cloudMsg)} Changes are still saved on this PC. Fix it in <b>Tally settings → Cloud sync</b>.</div>`;
+  } else {
+    ban.innerHTML = '';
+  }
+}
+
+function cloudFillForm(){
+  if(!$('c_url')) return;
+  $('c_url').value = cloud.url || '';
+  $('c_key').value = cloud.key || '';
+  $('c_device').value = cloud.device || '';
+}
+
+function cloudStart(){
+  cloudLoadCfg();
+  cloudFillForm();
+  cloudRender();
+
+  $('cloudBanner').addEventListener('click', e => {
+    const b = e.target.closest('[data-cloud]');
+    if(b) cloudResolve(b.dataset.cloud);
+  });
+  $('cloudPill').addEventListener('click', () => {
+    const t = document.querySelector('.tab[data-tab="settings"]');
+    if(t) t.click();
+    const s = $('cloudStatus'); if(s) s.scrollIntoView({ behavior:'smooth', block:'center' });
+  });
+
+  $('cloudConnectBtn').addEventListener('click', async () => {
+    const url = $('c_url').value.trim(), key = $('c_key').value, device = $('c_device').value.trim();
+    if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)){
+      cloudSetState('error', 'The Web app URL should start with https://script.google.com/ and end with /exec.');
+      if(!cloudOn()){ const st = $('cloudStatus'); st.style.display=''; st.className='note bad'; st.textContent = cloudMsg; }
+      return;
+    }
+    if(!key){ toast('Enter the passphrase you set in the Apps Script.'); return; }
+    if(!device){ toast('Give this PC a name, e.g. "Billing PC 1".'); return; }
+    const sameStore = url === cloud.url;
+    cloud.url = url; cloud.key = key; cloud.device = device;
+    if(!sameStore){ cloud.rev = ''; cloud.lastSync = ''; cloud.lastBy = ''; }
+    cloudChoice = null;
+    cloudSaveCfg();
+    cloudSetState('off', 'Connecting…');
+    await cloudCheck({ manual:true, startup:true });
+    if(cloudState === 'ok' || cloudState === 'conflict') toast('Connected to cloud sync.');
+  });
+  $('cloudPushBtn').addEventListener('click', () => {
+    if(!cloudOn()){ toast('Connect cloud sync first.'); return; }
+    cloudPush(false);
+  });
+  $('cloudPullBtn').addEventListener('click', () => {
+    if(!cloudOn()){ toast('Connect cloud sync first.'); return; }
+    cloudCheck({ manual:true });
+  });
+  $('cloudDisconnectBtn').addEventListener('click', () => {
+    if(!cloudOn()){ toast('This browser is not connected.'); return; }
+    askConfirm('Stop cloud sync in this browser? The data on this PC and in Google Drive both stay as they are.', () => {
+      clearTimeout(cloudTimer); clearTimeout(cloudRetry);
+      cloud = { url:'', key:'', device: cloud.device, rev:'', dirty:false, lastSync:'', lastBy:'' };
+      cloudChoice = null;
+      cloudSaveCfg(); cloudFillForm(); cloudSetState('off');
+      toast('Cloud sync turned off for this browser.');
+    });
+  });
+
+  window.addEventListener('focus', () => { if(Date.now() - cloudLastCheck > 15000) cloudCheck(); });
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible' && Date.now() - cloudLastCheck > 15000) cloudCheck();
+  });
+  setInterval(() => { if(document.visibilityState === 'visible') cloudCheck(); }, CLOUD_POLL_MS);
+  window.addEventListener('online', () => { if(cloud.dirty) cloudPush(false); else cloudCheck(); });
+  window.addEventListener('beforeunload', e => {
+    if(cloudOn() && (cloud.dirty || cloudBusy)){ e.preventDefault(); e.returnValue = ''; }
+  });
+
+  if(cloudOn()) cloudCheck({ startup:true });
 }
 
 /* ============================ LOOKUPS ============================ */
@@ -2255,7 +2612,7 @@ $('clearLogBtn').addEventListener('click', () => {
 });
 
 $('billDate').value = todayISO();
-load();
+load().then(cloudStart);
 </script>
 </body>
 </html>
