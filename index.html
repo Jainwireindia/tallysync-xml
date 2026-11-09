@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TallySync XML v3.1.0</title>
+<title>TallySync XML v3.2.0</title>
 <meta name="color-scheme" content="light dark">
 <script>
 // Set the theme before first paint so the page never flashes the wrong colours.
@@ -86,6 +86,8 @@ body.gated .tabs, body.gated .panel, body.gated .exportbar{display:none !importa
 .fixhelp table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
 .fixhelp td{padding:5px 6px;border-top:1px solid var(--line);vertical-align:middle;color:var(--ink)}
 .fixhelp .btnrow{margin-top:8px}
+.fixhelp .fixprog{font-size:11px;color:var(--ink-soft);margin-bottom:4px;font-family:"IBM Plex Mono",ui-monospace,monospace}
+.fixhelp .fixlast{color:var(--ok,#2e7d32);margin-bottom:6px}
 .eyebrow{display:inline-block;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:.03em;color:#fff;background:var(--weld);padding:5px 12px;border-radius:2px}
 .toolname{display:flex;align-items:flex-end;gap:5px;margin:0 0 12px}
 .toolname .ver{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:10px;line-height:1;letter-spacing:.02em;color:#fff;background:var(--ver-bg);padding:3px 6px;border-radius:2px;margin-bottom:1px}
@@ -209,7 +211,7 @@ table.grid tbody tr:hover{background:var(--panel-2)}
     <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme">&#9790;</button>
   </div>
   <h1>JAIN WIRE NETTING CORPORATION <span class="ekm">(EKM)</span></h1>
-  <div class="toolname"><span class="eyebrow">TallySync XML</span><span class="ver">v3.1.0</span></div>
+  <div class="toolname"><span class="eyebrow">TallySync XML</span><span class="ver">v3.2.0</span></div>
   <p>Reads your rate sheet, applies your pricing rules, and writes a TallyPrime-ready XML. Voucher numbers stay with Tally — this file never sets one.</p>
 </header>
 
@@ -368,7 +370,13 @@ table.grid tbody tr:hover{background:var(--panel-2)}
     <div><label class="fld">Your state</label><input id="s_state"></div>
     <div><label class="fld">Voucher type</label><input id="s_vtype"></div>
     <div><label class="fld">Godown</label><input id="s_godown"></div>
+    <div><label class="fld">Bill-wise reference</label><select id="s_billRef">
+      <option value="tally">Voucher no. (auto)</option>
+      <option value="blank">New Ref, no name</option>
+      <option value="date">Date + bill no. (old)</option>
+    </select></div>
   </div>
+  <div class="note">The voucher number is only known after Tally imports the bill, so the XML can't carry it. <b>Voucher no.</b> leaves the bill-wise reference out: when the bill is opened in Tally to add tax, Tally asks for it with the voucher number already filled in. Import one bill first to check; if Tally refuses it, try <b>New Ref, no name</b>, or go back to <b>Date + bill no.</b> (the old 20261109-1 style).</div>
   <div class="sub">Sales ledgers — 18% items</div>
   <div class="grid2">
     <div><label class="fld">Within Kerala</label><input id="s_salesLocal18"></div>
@@ -512,7 +520,8 @@ let settings = {
   salesInter5:'',
   cgst:'CGST', sgst:'SGST', igst:'IGST',
   round:'Round Off',
-  roundMethod:'upward'
+  roundMethod:'upward',
+  billRef:'tally'          // bill-wise reference: 'tally' = Tally names it (voucher no.), 'blank' = unnamed New Ref, 'date' = yyyymmdd-n
 };
 let items = [];
 let parties = [];
@@ -1233,12 +1242,17 @@ function priceRow(it, qty, quotedRate){
 
   let billedQty = qty, rate = null, unit = it.unit || rule.unit, issue = null, basis = '';
 
-  if(rule.dim){
+  // An item whose Tally unit is sq.ft is billed by area whatever its category says:
+  // the sheet's qty is rolls/pieces, so quantity = qty x height x length and the rate is per sq.ft.
+  const sqftUnit = ['sqft','sqf','sqfeet','sqfoot'].includes(String(unit||'').replace(/[\s.]/g,'').toLowerCase());
+  const byArea = rule.area || (rule.dim && sqftUnit);
+
+  if(byArea){
+    if(h == null || l == null){ issue = 'Height or length missing — needed to work out sq.ft.'; }
+    else { billedQty = qty * h * l; rate = ceilTo(quotedRate/div, rule.area ? rule.decimals : 2); basis = `${qty} × ${h}ft × ${l}ft = ${qtyFmt(billedQty)} sq.ft`; }
+  } else if(rule.dim){
     if(h == null || l == null){ issue = 'Height or length missing — set them on the item.'; }
     else { rate = ceilTo((h * l * quotedRate) / div, rule.decimals); basis = `${h}ft × ${l}ft × ₹${quotedRate} ÷ ${div}`; }
-  } else if(rule.area){
-    if(h == null || l == null){ issue = 'Height or length missing — needed to work out sq.ft.'; }
-    else { billedQty = qty * h * l; rate = ceilTo(quotedRate/div, rule.decimals); basis = `${qty} × ${h}ft × ${l}ft = ${qtyFmt(billedQty)} sq.ft`; }
   } else if(rule.bundled){
     const w = bundleWeightFor(it);
     if(!w){ issue = 'No bundle weight for this item — add one under Pricing rules or on the item.'; }
@@ -1386,9 +1400,20 @@ function billToXml(bill, idx){
   // BILLALLOCATIONS.LIST is required here: your party ledgers are bill-wise
   // tracked (confirmed from a real export), and without a bill reference
   // Tally can't settle the debit side even though the amount is correct.
+  // The voucher number is automatic, so Tally only decides it on import and the
+  // XML can't name the bill after it. 'tally' sends no bill allocation at all:
+  // the voucher is opened in Tally anyway to add tax, and on that pass Tally's
+  // bill-wise screen offers New Ref named with the voucher number, the same as
+  // a bill typed by hand. 'blank' sends a New Ref without a name; 'date' keeps
+  // the old yyyymmdd-n reference made here.
+  const mode = settings.billRef || 'tally';
+  const billAlloc = mode === 'date'
+      ? `\n<BILLALLOCATIONS.LIST>\n<NAME>${esc(billRef)}</NAME>\n<BILLTYPE>New Ref</BILLTYPE>\n<AMOUNT>${(-bill.taxable).toFixed(2)}</AMOUNT>\n</BILLALLOCATIONS.LIST>`
+    : mode === 'blank'
+      ? `\n<BILLALLOCATIONS.LIST>\n<BILLTYPE>New Ref</BILLTYPE>\n<AMOUNT>${(-bill.taxable).toFixed(2)}</AMOUNT>\n</BILLALLOCATIONS.LIST>`
+      : '';
   const billExtra =
-    (bill.party.gstin ? `\n<PARTYGSTIN>${esc(bill.party.gstin)}</PARTYGSTIN>` : '') +
-    `\n<BILLALLOCATIONS.LIST>\n<NAME>${esc(billRef)}</NAME>\n<BILLTYPE>New Ref</BILLTYPE>\n<AMOUNT>${(-bill.taxable).toFixed(2)}</AMOUNT>\n</BILLALLOCATIONS.LIST>`;
+    (bill.party.gstin ? `\n<PARTYGSTIN>${esc(bill.party.gstin)}</PARTYGSTIN>` : '') + billAlloc;
   let led = ledgerEntry(bill.party.name, bill.taxable, true, billExtra, true);
 
   // Tally only fills the address/pincode/place shown on the printed invoice
@@ -1968,8 +1993,8 @@ function renderRules(){
 }
 
 function renderSettings(){
-  ['company','gstin','state','vtype','godown','salesLocal18','salesInter18','salesLocal5','salesInter5','cgst','sgst','igst','round','roundMethod'].forEach(k => {
-    const el = $('s_' + k); if(el) el.value = settings[k] || '';
+  ['company','gstin','state','vtype','godown','salesLocal18','salesInter18','salesLocal5','salesInter5','cgst','sgst','igst','round','roundMethod','billRef'].forEach(k => {
+    const el = $('s_' + k); if(el) el.value = settings[k] || (k === 'billRef' ? 'tally' : '');
   });
 }
 
@@ -2177,26 +2202,69 @@ $('npSave').addEventListener('click', () => {
    entries so the usual fix — this is a known party/item written differently —
    is one click (alias / variant), and "add new" opens the full, validated form.
    It never changes anything by itself; every change goes through the master. */
-let fixCtx = null;   // { kind:'party'|'item', text }
-
+let fixCtx = null;   // { kind:'party'|'item', text, seq:[...], skipped:Set, done, last }
 function showTab(name){
   const t = document.querySelector(`.tab[data-tab="${name}"]`);
   if(t) t.click();
 }
-function openFix(kind, text){
-  fixCtx = { kind, text };
-  if(kind === 'party'){
+// Everything still unmatched in this batch, in bill order, one entry per spelling.
+function fixPending(kind){
+  const out = [], seen = new Set();
+  (bills||[]).forEach(b => {
+    const list = kind === 'party' ? (b.party ? [] : [b.block.customerName]) : (b.missingItems || []);
+    list.forEach(t => { const k = tight(t); if(k && !seen.has(k)){ seen.add(k); out.push(t); } });
+  });
+  return out;
+}
+// Where a code / name is used, so the person can tell what it is before matching it.
+function fixUses(kind, text){
+  const k = tight(text), out = [];
+  (bills||[]).forEach(b => {
+    if(kind === 'party'){
+      if(!b.party && tight(b.block.customerName) === k) out.push(`${b.lines.length} line${b.lines.length!==1?'s':''}`);
+    } else {
+      b.lines.filter(l => l.missing && tight(l.code) === k).forEach(l =>
+        out.push(`${b.party ? b.party.name : b.block.customerName}: qty ${l.qty}${l.quotedRate != null ? ` @ ₹${l.quotedRate}` : ''}`));
+    }
+  });
+  return out;
+}
+function fixSeed(){
+  if(fixCtx && fixCtx.kind === 'party' && fixCtx.text){
     // Seed the list search with the first real word of the name, so the table
     // shows the likely candidates the way someone would search by hand.
-    const words = norm(text).split(' ').filter(w => w.length >= 3 && !['the','and'].includes(w));
+    const words = norm(fixCtx.text).split(' ').filter(w => w.length >= 3 && !['the','and'].includes(w));
     $('partySearch').value = words[0] || '';
     renderParties();
-    showTab('parties');
-  } else {
-    showTab('items');
   }
+}
+function openFix(kind, text){
+  const p = fixPending(kind), i = p.findIndex(t => tight(t) === tight(text));
+  const seq = i >= 0 ? p.slice(i).concat(p.slice(0, i)) : [text].concat(p);
+  fixCtx = { kind, text, seq, skipped: new Set(), done: 0, last: null };
+  fixSeed();
+  showTab(kind === 'party' ? 'parties' : 'items');
   renderFixHelp();
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+// Move to the next unmatched entry after the current one (wrapping round),
+// leaving out anything skipped. Returns false when nothing is left.
+function fixNext(){
+  const live = fixPending(fixCtx.kind), liveK = new Set(live.map(tight));
+  live.forEach(t => { if(!fixCtx.seq.some(x => tight(x) === tight(t))) fixCtx.seq.push(t); });
+  const n = fixCtx.seq.length, cur = fixCtx.seq.findIndex(x => tight(x) === tight(fixCtx.text || ''));
+  for(let i = 1; i <= n; i++){
+    const t = fixCtx.seq[((cur + i) % n + n) % n];
+    const k = tight(t);
+    if(liveK.has(k) && !fixCtx.skipped.has(k) && k !== tight(fixCtx.text || '')){
+      fixCtx.text = t; fixSeed(); return true;
+    }
+  }
+  fixCtx.text = null; return false;
+}
+function fixScrollTop(){
+  const host = fixCtx && (fixCtx.kind === 'party' ? $('partyFixHelp') : $('itemFixHelp'));
+  if(host) host.scrollIntoView({ block:'start', behavior:'smooth' });
 }
 function partyCandidates(name){
   const want = bigrams(name);
@@ -2223,44 +2291,74 @@ function renderFixHelp(){
   if(!blocks) fixCtx = null;
   ph.innerHTML = ''; ih.innerHTML = '';
   if(!fixCtx) return;
-  const host = fixCtx.kind === 'party' ? ph : ih;
-  const T = esc(fixCtx.text);
-  const back = `<button class="mini primary" data-fixact="back">← Back to bills</button>`;
-  const close = `<button class="mini" data-fixact="close">Close</button>`;
+  const kind = fixCtx.kind, isParty = kind === 'party';
 
-  if(fixCtx.kind === 'party'){
-    const hit = findParty(fixCtx.text);
-    if(hit){
-      host.innerHTML = `<div class="note ok fixhelp">✓ “${T}” now matches <b>${esc(hit.name)}</b>. ${esc(waitingBillsNote())}
-        <div class="btnrow">${back}${close}</div></div>`;
+  // The current one got matched (alias, variant, new item/party, or an edit in
+  // the table): count it and go straight on to the next one.
+  if(fixCtx.text && (isParty ? findParty(fixCtx.text) : findItem(fixCtx.text))){
+    const hit = isParty ? findParty(fixCtx.text) : findItem(fixCtx.text);
+    fixCtx.done++;
+    fixCtx.last = { text: fixCtx.text, name: hit.name };
+    fixNext();
+  }
+
+  const host = isParty ? ph : ih;
+  const back = `<button class="mini" data-fixact="back">← Back to bills</button>`;
+  const close = `<button class="mini" data-fixact="close">Close</button>`;
+  const left = fixPending(kind).filter(t => !fixCtx.skipped.has(tight(t)));
+  const skippedLeft = fixPending(kind).filter(t => fixCtx.skipped.has(tight(t)));
+  const what = isParty ? 'part' + 'ies' : 'item codes';
+  const progress = `<div class="fixprog">${fixCtx.done} matched · ${skippedLeft.length} skipped · ${left.length} left</div>`;
+  const lastLine = fixCtx.last
+    ? `<div class="fixlast">✓ “${esc(fixCtx.last.text)}” now matches <b>${esc(fixCtx.last.name)}</b>.</div>` : '';
+
+  if(!fixCtx.text){
+    const other = isParty ? 'item' : 'party';
+    const otherLeft = fixPending(other).length;
+    const otherBtn = otherLeft
+      ? `<button class="mini primary" data-fixact="other">Match ${otherLeft} ${isParty ? 'item code' : 'part'}${otherLeft!==1 ? (isParty ? 's' : 'ies') : (isParty ? '' : 'y')} next →</button>` : '';
+    if(skippedLeft.length){
+      host.innerHTML = `<div class="note warn fixhelp">${lastLine}
+        <b>Done for now.</b> ${skippedLeft.length} skipped: ${esc(skippedLeft.join(', '))}. Those bills stay blocked until they're matched.
+        ${progress}
+        <div class="btnrow"><button class="mini primary" data-fixact="again">Go through the ${skippedLeft.length} skipped again</button>${otherBtn}${back}${close}</div></div>`;
     } else {
-      const c = partyCandidates(fixCtx.text);
-      host.innerHTML = `<div class="note warn fixhelp"><b>Fixing a bill:</b> the rate sheet says “${T}”, which doesn't match any party.
-        ${c.length ? `<div style="margin-top:6px">Closest parties. If one of them is the right Tally ledger, add “${T}” to its aliases:</div>
-        <table>${c.map(({p}) => `<tr>
-          <td><b>${esc(p.name)}</b>${p.gstin ? ` <span class="mono muted">${esc(p.gstin)}</span>` : ''}</td>
-          <td class="muted">${partyAliases(p).length ? `aliases: ${esc(partyAliases(p).join('; '))}` : 'no alias yet'}</td>
-          <td style="text-align:right"><button class="mini" data-fixact="alias" data-pi="${parties.indexOf(p)}">Add as alias</button></td>
-        </tr>`).join('')}</table>` : `<div style="margin-top:6px">No party in the master looks close. Search the list below to be sure.</div>`}
-        <div class="btnrow"><button class="mini" data-fixact="addparty">Not listed: add “${T}” as a new party</button>${back}${close}</div></div>`;
+      host.innerHTML = `<div class="note ok fixhelp">${lastLine}
+        <b>Every ${isParty ? 'party' : 'item code'} in this batch now matches.</b> ${esc(waitingBillsNote())}
+        ${progress}
+        <div class="btnrow">${otherBtn}<button class="mini ${otherBtn ? '' : 'primary'}" data-fixact="back">← Back to bills</button>${close}</div></div>`;
     }
+    return;
+  }
+
+  const T = esc(fixCtx.text);
+  const uses = fixUses(kind, fixCtx.text);
+  const usesLine = uses.length
+    ? `<div class="muted" style="margin-top:4px">On ${isParty ? 'its bill' : 'the bills'}: ${esc(uses.slice(0,3).join(' · '))}${uses.length > 3 ? ` · +${uses.length-3} more` : ''}</div>` : '';
+  const skip = `<button class="mini" data-fixact="skip" title="Leave this one for now and go to the next">Skip →</button>`;
+  if(isParty){
+    const c = partyCandidates(fixCtx.text);
+    host.innerHTML = `<div class="note warn fixhelp">${lastLine}${progress}
+      <b>Matching parties:</b> the rate sheet says “${T}”, which doesn't match any party.${usesLine}
+      ${c.length ? `<div style="margin-top:6px">Closest parties. If one of them is the right Tally ledger, add “${T}” to its aliases:</div>
+      <table>${c.map(({p}) => `<tr>
+        <td><b>${esc(p.name)}</b>${p.gstin ? ` <span class="mono muted">${esc(p.gstin)}</span>` : ''}</td>
+        <td class="muted">${partyAliases(p).length ? `aliases: ${esc(partyAliases(p).join('; '))}` : 'no alias yet'}</td>
+        <td style="text-align:right"><button class="mini" data-fixact="alias" data-pi="${parties.indexOf(p)}">Add as alias</button></td>
+      </tr>`).join('')}</table>` : `<div style="margin-top:6px">No party in the master looks close. Search the list below to be sure.</div>`}
+      <div class="btnrow"><button class="mini" data-fixact="addparty">Not listed: add “${T}” as a new party</button>${skip}${back}${close}</div></div>`;
   } else {
-    const hit = findItem(fixCtx.text);
-    if(hit){
-      host.innerHTML = `<div class="note ok fixhelp">✓ Code “${T}” now matches <b>${esc(hit.name)}</b>. ${esc(waitingBillsNote())}
-        <div class="btnrow">${back}${close}</div></div>`;
-    } else {
-      const c = itemCandidates(fixCtx.text);
-      host.innerHTML = `<div class="note warn fixhelp"><b>Fixing a bill:</b> the rate sheet code “${T}” doesn't match any item.
-        ${c.length ? `<div style="margin-top:6px">Closest items. If one of them is the right Tally item, add “${T}” to its variants:</div>
-        <table>${c.map(({it}) => `<tr>
-          <td class="mono">${esc(it.code)}</td>
-          <td><b>${esc(it.name)}</b></td>
-          <td class="muted">${esc((rules[it.cat]||{}).label || 'no category')}</td>
-          <td style="text-align:right"><button class="mini" data-fixact="variant" data-ii="${items.indexOf(it)}">Add as variant</button></td>
-        </tr>`).join('')}</table>` : `<div style="margin-top:6px">No item in the master looks close. Search the list below to be sure.</div>`}
-        <div class="btnrow"><button class="mini" data-fixact="additem">Not listed: add “${T}” as a new item</button>${back}${close}</div></div>`;
-    }
+    const c = itemCandidates(fixCtx.text);
+    host.innerHTML = `<div class="note warn fixhelp">${lastLine}${progress}
+      <b>Matching item codes:</b> the rate sheet code “${T}” doesn't match any item.${usesLine}
+      ${c.length ? `<div style="margin-top:6px">Closest items. If one of them is the right Tally item, add “${T}” to its variants:</div>
+      <table>${c.map(({it}) => `<tr>
+        <td class="mono">${esc(it.code)}</td>
+        <td><b>${esc(it.name)}</b></td>
+        <td class="muted">${esc((rules[it.cat]||{}).label || 'no category')}</td>
+        <td style="text-align:right"><button class="mini" data-fixact="variant" data-ii="${items.indexOf(it)}">Add as variant</button></td>
+      </tr>`).join('')}</table>` : `<div style="margin-top:6px">No item in the master looks close. Search the list below to be sure.</div>`}
+      <div class="btnrow"><button class="mini" data-fixact="additem">Not listed: add “${T}” as a new item</button>${skip}${back}${close}</div></div>`;
   }
 }
 function onFixHelpClick(e){
@@ -2269,10 +2367,25 @@ function onFixHelpClick(e){
   const act = b.dataset.fixact, text = fixCtx.text;
   if(act === 'back'){ showTab('build'); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   if(act === 'close'){ fixCtx = null; renderFixHelp(); return; }
+  if(act === 'skip'){
+    fixCtx.skipped.add(tight(text)); fixCtx.last = null;
+    fixNext(); renderFixHelp(); fixScrollTop(); return;
+  }
+  if(act === 'again'){
+    fixCtx.skipped.clear(); fixCtx.last = null; fixCtx.text = null;
+    fixNext(); renderFixHelp(); fixScrollTop(); return;
+  }
+  if(act === 'other'){
+    const kind = fixCtx.kind === 'party' ? 'item' : 'party';
+    const first = fixPending(kind)[0];
+    if(first) openFix(kind, first);
+    return;
+  }
+  if(!text) return;
   if(act === 'alias'){
     const p = parties[+b.dataset.pi]; if(!p) return;
     addAlias(p, text);   // added alongside any aliases it already has
-    save(); renderParties(); if(blocks) buildBills(); renderFixHelp();
+    save(); renderParties(); if(blocks) buildBills(); renderFixHelp(); fixScrollTop();
     toast(`“${text}” added to the aliases of ${p.name}.`);
     return;
   }
@@ -2281,7 +2394,7 @@ function onFixHelpClick(e){
     const vs = String(it.variants||'').split(',').map(v => v.trim()).filter(Boolean);
     if(!vs.some(v => tight(v) === tight(text))) vs.push(text);
     it.variants = vs.join(', ');
-    save(); renderItems(); if(blocks) buildBills(); renderFixHelp();
+    save(); renderItems(); if(blocks) buildBills(); renderFixHelp(); fixScrollTop();
     toast(`“${text}” added as a variant of ${it.code}.`);
     return;
   }
@@ -2395,7 +2508,7 @@ function readPartyFile(file){
 }
 
 $('saveSettings').addEventListener('click', () => {
-  ['company','gstin','state','vtype','godown','salesLocal18','salesInter18','salesLocal5','salesInter5','cgst','sgst','igst','round','roundMethod'].forEach(k => {
+  ['company','gstin','state','vtype','godown','salesLocal18','salesInter18','salesLocal5','salesInter5','cgst','sgst','igst','round','roundMethod','billRef'].forEach(k => {
     settings[k] = $('s_' + k).value.trim();
   });
   save(); if(blocks) buildBills();
