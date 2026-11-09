@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TallySync XML v3.2.0</title>
+<title>TallySync XML v3.2.1</title>
 <meta name="color-scheme" content="light dark">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'><rect width='64' height='64' rx='13' fill='%231F5F8B'/><g transform='translate(32 32) scale(.8) translate(-32 -32)'><g fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round'><path d='M12 22 L5 32 L12 42' stroke-width='4.4'/><path d='M18 22 V42 M28 22 V42 M38 22 V42 M18 22 H38 M18 32 H38 M18 42 H38' stroke-width='2.6' opacity='.95'/><path d='M43 43 L48 21' stroke-width='4.4'/><path d='M52 22 L59 32 L52 42' stroke-width='4.4'/></g><g fill='%23F2B84B'><circle cx='18' cy='22' r='2.7'/><circle cx='28' cy='22' r='2.7'/><circle cx='38' cy='22' r='2.7'/><circle cx='18' cy='32' r='2.7'/><circle cx='28' cy='32' r='2.7'/><circle cx='38' cy='32' r='2.7'/><circle cx='18' cy='42' r='2.7'/><circle cx='28' cy='42' r='2.7'/><circle cx='38' cy='42' r='2.7'/></g></g></svg>">
 <script>
 // Set the theme before first paint so the page never flashes the wrong colours.
 (function(){ var t=null; try{ t=localStorage.getItem('jwnc_theme'); }catch(e){}
@@ -92,6 +93,11 @@ body.gated .tabs, body.gated .panel, body.gated .exportbar{display:none !importa
 .toolname{display:flex;align-items:flex-end;gap:5px;margin:0 0 12px}
 .toolname .ver{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:10px;line-height:1;letter-spacing:.02em;color:#fff;background:var(--ver-bg);padding:3px 6px;border-radius:2px;margin-bottom:1px}
 h1 .ekm{font-size:14px;font-weight:500;letter-spacing:0;color:var(--ink-soft);margin-left:4px}
+.brandrow{display:flex;align-items:center;gap:16px;margin:0 0 12px;padding-right:110px}
+.brandrow .logo{width:66px;height:66px;flex:none;display:block;filter:drop-shadow(0 2px 4px rgba(19,32,41,.18))}
+.brandrow h1{margin-bottom:8px}
+.brandrow .toolname{margin-bottom:0}
+@media (max-width:640px){.brandrow{gap:12px;padding-right:0;align-items:flex-start}.brandrow .logo{width:48px;height:48px;margin-top:2px}}
 h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:31px;letter-spacing:-.02em;margin:0 0 10px}
 header p{margin:0;color:var(--ink-soft);font-size:14px;line-height:1.55;max-width:680px}
 
@@ -210,8 +216,13 @@ table.grid tbody tr:hover{background:var(--panel-2)}
     <button type="button" data-theme-set="light" title="Light theme" aria-label="Light theme">&#9728;</button>
     <button type="button" data-theme-set="dark" title="Dark theme" aria-label="Dark theme">&#9790;</button>
   </div>
-  <h1>JAIN WIRE NETTING CORPORATION <span class="ekm">(EKM)</span></h1>
-  <div class="toolname"><span class="eyebrow">TallySync XML</span><span class="ver">v3.2.0</span></div>
+  <div class="brandrow">
+    <svg class="logo" viewBox="0 0 64 64" role="img" aria-label="TallySync XML logo: welded wire mesh inside an XML tag"><rect width="64" height="64" rx="13" fill="var(--weld)"/><g transform="translate(32 32) scale(.8) translate(-32 -32)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22 L5 32 L12 42" stroke-width="4.4"/><path d="M18 22 V42 M28 22 V42 M38 22 V42 M18 22 H38 M18 32 H38 M18 42 H38" stroke-width="2.6" opacity=".95"/><path d="M43 43 L48 21" stroke-width="4.4"/><path d="M52 22 L59 32 L52 42" stroke-width="4.4"/></g><g fill="#F2B84B"><circle cx="18" cy="22" r="2.7"/><circle cx="28" cy="22" r="2.7"/><circle cx="38" cy="22" r="2.7"/><circle cx="18" cy="32" r="2.7"/><circle cx="28" cy="32" r="2.7"/><circle cx="38" cy="32" r="2.7"/><circle cx="18" cy="42" r="2.7"/><circle cx="28" cy="42" r="2.7"/><circle cx="38" cy="42" r="2.7"/></g></g></svg>
+    <div class="brandtext">
+      <h1>JAIN WIRE NETTING CORPORATION <span class="ekm">(EKM)</span></h1>
+      <div class="toolname"><span class="eyebrow">TallySync XML</span><span class="ver">v3.2.1</span></div>
+    </div>
+  </div>
   <p>Reads your rate sheet, applies your pricing rules, and writes a TallyPrime-ready XML. Voucher numbers stay with Tally — this file never sets one.</p>
 </header>
 
